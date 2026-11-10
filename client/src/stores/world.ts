@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatMessage, CityObject, CityRoute, ObjectType, PlayerState, Role, RoomSummary, SimState } from '@civitas/shared';
+import type { ChatMessage, CityObject, CityRoute, LudoState, ObjectType, PlayerState, Role, RoomSummary, SimState } from '@civitas/shared';
 import { hasWebGL, initialQuality, isTouchDevice, type QualityLevel } from '../engine/optimization/quality';
 
 export type ConnStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
@@ -29,6 +29,10 @@ interface WorldState {
   inside: string | null;
   /** Park whose photo-to-3D studio is open, or null. */
   artStudio: string | null;
+  /** Tree whose Ludo table is open, the latest table states we have seen, and the last dice roll. */
+  ludoTree: string | null;
+  ludo: Record<string, LudoState>;
+  ludoDice: { treeId: string; value: number; at: number } | null;
   tool: Tool;
   transformMode: 'translate' | 'rotate' | 'scale';
   cameraMode: CameraMode;
@@ -56,6 +60,9 @@ const initial = () => ({
   selectedId: null,
   inside: null as string | null,
   artStudio: null as string | null,
+  ludoTree: null as string | null,
+  ludo: {} as Record<string, LudoState>,
+  ludoDice: null as { treeId: string; value: number; at: number } | null,
   tool: { kind: 'select' } as Tool,
 });
 

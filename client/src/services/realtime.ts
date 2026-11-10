@@ -174,6 +174,12 @@ class RealtimeClient {
       case 'sim':
         st.set({ sim: m.sim, serverOffset: m.serverNow - Date.now() });
         break;
+      case 'ludo':
+        st.set({
+          ludo: { ...st.ludo, [m.state.treeId]: m.state },
+          ...(m.dice ? { ludoDice: { treeId: m.state.treeId, value: m.dice, at: Date.now() } } : {}),
+        });
+        break;
       case 'pong':
         break;
       case 'error':

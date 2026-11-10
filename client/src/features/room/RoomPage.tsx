@@ -20,6 +20,7 @@ import { CameraSwitch, SettingsPanel } from './SettingsPanel';
 import { useMedia } from '../communication/mediaStore';
 import { InteractionPrompt, TouchActions } from './InteractionControls';
 import { PhotoStudio } from '../art/PhotoStudio';
+import { LudoPanel } from '../games/LudoPanel';
 
 const loadCanvas = () => import('../../engine/scenes/CityCanvas');
 const CityCanvas = lazy(loadCanvas);
@@ -166,6 +167,7 @@ function RoomShell() {
         {!panel && <div className="pointer-events-none absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-4"><Joystick /></div>}
         {!panel && renderMode === '3d' && <TouchActions />}
         <PhotoStudio />
+        <LudoPanel />
         <Toast bottom />
         {panel && (
           <MobileSheet title={{ chat: 'Chat', people: 'People', build: selectedId ? 'Selected object' : 'Build', more: 'More', settings: 'Settings' }[panel]} onClose={() => setPanel(null)}>
@@ -239,6 +241,7 @@ function RoomShell() {
           {isTouchDevice() && <div className="pointer-events-none absolute bottom-24 left-4 z-10"><Joystick /></div>}
           {renderMode === '3d' && <InteractionPrompt />}
           <PhotoStudio />
+          <LudoPanel />
           <Toast />
           <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center px-3">
             <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full bg-panel p-1.5 shadow-lg backdrop-blur no-scrollbar" role="toolbar" aria-label="Meeting and city controls">

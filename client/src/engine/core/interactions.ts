@@ -30,6 +30,7 @@ let cacheFor: Record<string, CityObject> | null = null;
 let solids: { o: CityObject; f: Frame; hw: number; hd: number }[] = [];
 let benches: Seat[] = [];
 let parks: { o: CityObject; f: Frame; hw: number; hd: number }[] = [];
+let trees: CityObject[] = [];
 function ensureCache() {
   const objects = useWorld.getState().objects;
   if (objects === cacheFor) return;
@@ -37,11 +38,14 @@ function ensureCache() {
   solids = [];
   benches = [];
   parks = [];
+  trees = [];
   for (const o of Object.values(objects)) {
     const f = frameOf(o);
     if (ENTERABLE.includes(o.type)) {
       const [w, d] = OBJECT_INFO[o.type].footprint;
       solids.push({ o, f, hw: (w * o.scale.x) / 2, hd: (d * o.scale.z) / 2 });
+    } else if (o.type === 'tree') {
+      trees.push(o);
     } else if (o.type === 'park') {
       const [w, d] = OBJECT_INFO.park.footprint;
       parks.push({ o, f, hw: (w * o.scale.x) / 2, hd: (d * o.scale.z) / 2 });
@@ -93,6 +97,16 @@ export function availableAction(): Action | null {
   if (p.y > 0.05) return null;
   const s = nearestSeat(benches);
   if (s) return { label: 'Sit on bench', run: () => sit(s) };
+  // Every tree has its own Ludo table (one game session per tree).
+  let tree: CityObject | null = null, td = 2.6;
+  for (const t of trees) {
+    const d = dist(p.x, p.z, t.position.x, t.position.z);
+    if (d < td) { td = d; tree = t; }
+  }
+  if (tree) {
+    const id = tree.id;
+    return { label: 'Play Ludo at this tree', run: () => useWorld.getState().set({ ludoTree: id }) };
+  }
   // Parks host the photo-to-3D studio (M7: AI-based graphics).
   for (const pk of parks) {
     const l = toLocal(pk.f, p.x, p.z);

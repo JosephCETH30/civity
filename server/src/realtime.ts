@@ -1,10 +1,11 @@
 // Authoritative realtime room server over WebSocket.
 // Transient state (avatar positions, presence) lives in memory only; world edits are validated then persisted.
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
-  canEdit, canTalk, clientMessageSchema, INTERIOR_DEPTH, OBJECT_INFO, normalizeSpec, objectSpecSchema, simElapsed, simHour,
+  canEdit, canTalk, clientMessageSchema, INTERIOR_DEPTH, OBJECT_INFO,
+  applyMove, applyRoll, legalTokens, newLudo, removePlayer, startGame, type LudoState, normalizeSpec, objectSpecSchema, simElapsed, simHour,
   type ChatMessage, type CityObject, type CityRoute, type ObjectSpec, type PlayerState, type Role,
   type RoomSummary, type ServerMessage, type SimState,
 } from '@civitas/shared';
@@ -85,6 +86,8 @@ export class CityRoom {
   routes = new Map<string, CityRoute>();
   messages: ChatMessage[] = [];
   sim: SimState = defaultSim();
+  /** One Ludo table per tree (tree object id -> game). Transient: not saved. */
+  ludo = new Map<string, { state: LudoState; watchers: Set<string>; timer?: NodeJS.Timeout }>();
   private tick?: NodeJS.Timeout;
   emptySince = Date.now();
 
@@ -109,6 +112,7 @@ export class CityRoom {
 
   dispose() {
     clearInterval(this.tick);
+    for (const g of this.ludo.values()) clearTimeout(g.timer);
   }
 
   get online() {
@@ -166,6 +170,12 @@ export class CityRoom {
 
   private async leave(s: Session) {
     if (!this.sessions.delete(s.id)) return;
+    for (const [treeId, g] of this.ludo) {
+      g.watchers.delete(s.id);
+      const seat = g.state.seats.findIndex((p) => p?.sessionId === s.id);
+      if (seat >= 0) { removePlayer(g.state, seat, Date.now()); this.sendLudo(g); this.scheduleLudo(g); }
+      if (!g.watchers.size && g.state.seats.every((p) => !p)) { clearTimeout(g.timer); this.ludo.delete(treeId); }
+    }
     this.broadcast({ t: 'player_leave', id: s.id });
     if (!this.sessions.size) this.emptySince = Date.now();
     if (![...this.sessions.values()].some((x) => x.player.userId === s.player.userId)) {
@@ -252,11 +262,93 @@ export class CityRoom {
         this.broadcast({ t: 'route_deleted', id: m.id });
         return;
       }
+      case 'ludo':
+        return this.onLudo(s, m.treeId, m.action, m.seat, m.token);
       case 'sim':
         if (role === 'viewer') throw new WorldError('Viewers cannot control the simulation');
         await this.updateSim(m.patch);
         return;
     }
+  }
+
+  // ---------- Ludo ----------
+  private sendLudo(g: { state: LudoState; watchers: Set<string> }, dice?: number) {
+    const to = new Set(g.watchers);
+    for (const p of g.state.seats) if (p) to.add(p.sessionId);
+    const data = JSON.stringify({ t: 'ludo', state: g.state, dice } satisfies ServerMessage);
+    for (const id of to) {
+      const s = this.sessions.get(id);
+      if (s && s.ws.readyState === s.ws.OPEN) s.ws.send(data);
+    }
+  }
+
+  /** Idle turn: after the deadline the server rolls and/or moves for the player so the table never stalls. */
+  private scheduleLudo(g: { state: LudoState; watchers: Set<string>; timer?: NodeJS.Timeout }) {
+    clearTimeout(g.timer);
+    if (g.state.phase !== 'playing') return;
+    g.timer = setTimeout(() => {
+      const st = g.state, now = Date.now();
+      if (st.phase !== 'playing') return;
+      let dice: number | undefined;
+      if (st.roll === null) { dice = randomInt(1, 7); applyRoll(st, dice, now); }
+      if (st.phase === 'playing' && st.roll !== null) applyMove(st, legalTokens(st, st.roll)[0], now);
+      st.event += ' (auto, player idle)';
+      this.sendLudo(g, dice);
+      this.scheduleLudo(g);
+    }, Math.max(0, g.state.turnDeadline - Date.now()) + 50);
+  }
+
+  private onLudo(s: Session, treeId: string, action: string, seat?: number, token?: number) {
+    const tree = this.objects.get(treeId);
+    if (!tree || tree.type !== 'tree') throw new WorldError('Ludo tables are at trees');
+    let g = this.ludo.get(treeId);
+    if (!g) this.ludo.set(treeId, (g = { state: newLudo(treeId), watchers: new Set() }));
+    const st = g.state, now = Date.now();
+    const mySeat = st.seats.findIndex((p) => p?.sessionId === s.id);
+    let dice: number | undefined;
+    switch (action) {
+      case 'watch':
+        g.watchers.add(s.id);
+        break;
+      case 'unwatch':
+        g.watchers.delete(s.id);
+        if (!g.watchers.size && st.seats.every((p) => !p)) { clearTimeout(g.timer); this.ludo.delete(treeId); }
+        return;
+      case 'join': {
+        if (st.phase === 'playing') throw new WorldError('A game is running at this tree. Watch, or try another tree.');
+        if (mySeat >= 0) throw new WorldError('You are already at this table');
+        if (st.seats.some((p) => p?.userId === s.player.userId)) throw new WorldError('You are already playing here in another tab');
+        const target = seat ?? st.seats.findIndex((p) => !p);
+        if (target < 0 || st.seats[target]) throw new WorldError('That seat is taken');
+        if (st.phase === 'finished') Object.assign(st, newLudo(treeId), { seats: st.seats });
+        st.seats[target] = { userId: s.player.userId, name: s.player.name, sessionId: s.id };
+        st.event = `${s.player.name} sat down`;
+        g.watchers.add(s.id);
+        break;
+      }
+      case 'leave':
+        if (mySeat < 0) return;
+        removePlayer(st, mySeat, now);
+        break;
+      case 'start':
+        if (mySeat < 0) throw new WorldError('Take a seat first');
+        if (st.phase === 'playing') return;
+        if (st.seats.filter(Boolean).length < 2) throw new WorldError('Ludo needs at least 2 players');
+        startGame(st, now);
+        break;
+      case 'roll':
+        if (st.phase !== 'playing' || mySeat !== st.turn) throw new WorldError('Not your turn');
+        if (st.roll !== null) throw new WorldError('Move a token first');
+        dice = randomInt(1, 7);
+        applyRoll(st, dice, now);
+        break;
+      case 'move':
+        if (st.phase !== 'playing' || mySeat !== st.turn) throw new WorldError('Not your turn');
+        if (token === undefined || !applyMove(st, token, now)) throw new WorldError('That token cannot move');
+        break;
+    }
+    this.sendLudo(g, dice);
+    this.scheduleLudo(g);
   }
 
   /** Owner changed someone's role: update live sessions in place. */
@@ -368,6 +460,13 @@ export class CityRoom {
     }
     this.objects.delete(id);
     this.broadcast({ t: 'obj_deleted', id });
+    const game = this.ludo.get(id);
+    if (game) {
+      clearTimeout(game.timer);
+      Object.assign(game.state, { phase: 'finished', roll: null, event: 'The tree was removed, game over' });
+      this.sendLudo(game);
+      this.ludo.delete(id);
+    }
     for (const r of affected) {
       this.broadcast({ t: 'route_deleted', id: r.id });
       if (r.stopIds.length >= 2) { this.routes.set(r.id, r); this.broadcast({ t: 'route_added', route: r }); }

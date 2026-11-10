@@ -1,5 +1,7 @@
 // Shared contract between client and server: domain types, validation schemas, wire protocol.
 import { z } from 'zod';
+import type { LudoState } from './ludo';
+export * from './ludo';
 
 // ---------- Roles & permissions ----------
 export const ROLES = ['owner', 'editor', 'participant', 'viewer'] as const;
@@ -238,6 +240,14 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('route_delete'), id: z.uuid() }),
   z.object({ t: z.literal('sim'), patch: simPatchSchema }),
   z.object({ t: z.literal('ping'), n: z.number() }),
+  // Ludo table at a tree: every tree is its own game session.
+  z.object({
+    t: z.literal('ludo'),
+    treeId: z.uuid(),
+    action: z.enum(['watch', 'unwatch', 'join', 'leave', 'start', 'roll', 'move']),
+    seat: z.number().int().min(0).max(3).optional(),
+    token: z.number().int().min(0).max(3).optional(),
+  }),
 ]);
 export type ClientMessage = z.input<typeof clientMessageSchema>;
 
@@ -266,6 +276,7 @@ export type ServerMessage =
   | { t: 'route_deleted'; id: string }
   | { t: 'sim'; sim: SimState; serverNow: number }
   | { t: 'pong'; n: number; serverNow: number }
+  | { t: 'ludo'; state: LudoState; dice?: number }
   | { t: 'error'; message: string; fatal?: boolean };
 
 // ---------- AI commands (LLM output is validated against this; never executed as code) ----------

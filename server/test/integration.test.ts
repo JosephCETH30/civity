@@ -285,6 +285,45 @@ test('photo sculptures: upload photo + depth map, place it, and only real upload
   c.close();
 });
 
+test('ludo: every tree is its own table; server rolls, validates turns and syncs players', async () => {
+  const a = new Client(users[0].token, roomId), b = new Client(users[1].token, roomId), c = new Client(users[2].token, roomId);
+  const init = await a.wait('init');
+  await b.wait('init'); await c.wait('init');
+  const trees = init.objects.filter((o) => o.type === 'tree');
+  const [t1, t2] = [trees[0].id, trees[1].id];
+  const last = (cl: Client, tree: string) => [...cl.msgs].reverse().find((m) => m.t === 'ludo' && m.state.treeId === tree) as Extract<ServerMessage, { t: 'ludo' }> | undefined;
+
+  a.send({ t: 'ludo', treeId: t1, action: 'join', seat: 0 });
+  b.send({ t: 'ludo', treeId: t1, action: 'join', seat: 2 });
+  c.send({ t: 'ludo', treeId: t2, action: 'join', seat: 1 }); // different tree, different game
+  await a.wait('ludo', (m) => m.state.treeId === t1 && !!m.state.seats[2]);
+  await c.wait('ludo', (m) => m.state.treeId === t2 && !!m.state.seats[1]);
+  assert.equal(last(a, t2), undefined, 'players at tree 1 do not receive tree 2 updates');
+  assert.equal(last(c, t1), undefined);
+
+  c.send({ t: 'ludo', treeId: t2, action: 'start' });
+  await c.wait('error', (m) => /at least 2/.test(m.message));
+  b.send({ t: 'ludo', treeId: t1, action: 'start' });
+  const started = await a.wait('ludo', (m) => m.state.treeId === t1 && m.state.phase === 'playing');
+  assert.equal(started.state.turn, 0);
+  b.send({ t: 'ludo', treeId: t1, action: 'roll' });
+  await b.wait('error', (m) => /Not your turn/.test(m.message));
+  a.send({ t: 'ludo', treeId: t1, action: 'roll' });
+  const rolled = await b.wait('ludo', (m) => m.state.treeId === t1 && typeof m.dice === 'number');
+  assert.ok(rolled.dice! >= 1 && rolled.dice! <= 6);
+  if (rolled.dice === 6) {
+    a.send({ t: 'ludo', treeId: t1, action: 'move', token: 0 });
+    await b.wait('ludo', (m) => m.state.treeId === t1 && m.state.tokens[0][0] === 0);
+  } else assert.equal(rolled.state.turn, 2, 'no six from base: turn passes to the other player');
+  // a third person can watch but not join a running game
+  c.send({ t: 'ludo', treeId: t1, action: 'join' });
+  await c.wait('error', (m) => /game is running/.test(m.message));
+  // leaving ends a two-player game
+  b.close();
+  await a.wait('ludo', (m) => m.state.treeId === t1 && m.state.phase === 'finished');
+  a.close(); c.close();
+});
+
 test('offline AI parser', () => {
   const a = parseOffline('Create a modern office building with ten floors.');
   assert.equal(a.action, 'create_objects');
