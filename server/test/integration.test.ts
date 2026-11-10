@@ -254,6 +254,37 @@ test('a paused room comes back running after everyone left and it was unloaded',
   back.close();
 });
 
+test('photo sculptures: upload photo + depth map, place it, and only real uploads are accepted', async () => {
+  const png = 'data:image/png;base64,' + Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+  const jpg = 'data:image/jpeg;base64,' + Buffer.from('ffd8ffe000104a4649460001', 'hex').toString('base64');
+  const up = await api(`/rooms/${roomId}/artworks`, { token: users[1].token, body: { image: jpg, depth: png } });
+  assert.equal(up.status, 201, JSON.stringify(up.json));
+  const img = await fetch(`${base}/api/artworks/${up.json.id}/image`);
+  assert.equal(img.headers.get('content-type'), 'image/jpeg');
+  assert.equal((await fetch(`${base}/api/artworks/${up.json.id}/depth`)).headers.get('content-type'), 'image/png');
+  // depth must be a PNG, fakes are rejected, viewers cannot upload
+  assert.equal((await api(`/rooms/${roomId}/artworks`, { token: users[1].token, body: { image: jpg, depth: jpg } })).status, 400);
+  const fake = 'data:image/png;base64,' + Buffer.from('<svg onload=alert(1)>').toString('base64');
+  assert.equal((await api(`/rooms/${roomId}/artworks`, { token: users[1].token, body: { image: fake, depth: png } })).status, 400);
+  assert.equal((await api(`/rooms/${roomId}/artworks`, { token: users[4].token, body: { image: jpg, depth: png } })).status, 403);
+
+  const c = new Client(users[1].token, roomId);
+  await c.wait('init');
+  const spec = (assetId?: string) => ({ type: 'artwork', position: { x: 5, y: 0, z: 5 }, rotationY: 0, scale: { x: 1, y: 1, z: 1 }, props: { ...(assetId ? { assetId } : {}), depthScale: 0.8, cutout: 0.2, aspect: 1.5 } });
+  c.send({ t: 'obj_add', spec: spec() });
+  await c.wait('error', (m) => /photo-to-3D/.test(m.message));
+  c.send({ t: 'obj_add', spec: spec('00000000-0000-4000-8000-000000000000') });
+  await c.wait('error', (m) => /photo-to-3D/.test(m.message), 3000).catch(() => {});
+  c.send({ t: 'obj_add', spec: spec(up.json.id) });
+  const added = await c.wait('obj_added', (m) => m.object.type === 'artwork');
+  assert.equal(added.object.props.assetId, up.json.id);
+  // deleting the sculpture removes its images
+  c.send({ t: 'obj_delete', id: added.object.id });
+  await c.wait('obj_deleted', (m) => m.id === added.object.id);
+  assert.equal((await fetch(`${base}/api/artworks/${up.json.id}/image`)).status, 404);
+  c.close();
+});
+
 test('offline AI parser', () => {
   const a = parseOffline('Create a modern office building with ten floors.');
   assert.equal(a.action, 'create_objects');

@@ -93,7 +93,7 @@ function blockInterval(o: CityObject, axis: Axis, c: number, halfW: number): [nu
   return [along - alongE, along + alongE];
 }
 
-const STATIC_BLOCKERS = new Set(['residential', 'office', 'commercial', 'school', 'hospital', 'park', 'tree', 'streetlight', 'bench', 'bus_stop']);
+const STATIC_BLOCKERS = new Set(['residential', 'office', 'commercial', 'school', 'hospital', 'park', 'tree', 'streetlight', 'bench', 'bus_stop', 'artwork']);
 
 export function heading(l: Lane) {
   return l.axis === 'x' ? (l.dir === 1 ? Math.PI / 2 : -Math.PI / 2) : l.dir === 1 ? 0 : Math.PI;

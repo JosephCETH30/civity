@@ -129,6 +129,12 @@ export function partsFor(o: Pick<CityObject, 'type' | 'props'>): Part[] {
         { geo: 'box', pos: [0, 0.8, -0.26], size: [w, 0.5, 0.08], color: c },
         { geo: 'box', pos: [0, 0.22, 0], size: [w * 0.9, 0.44, 0.4], color: '#3a3a3a' },
       ];
+    case 'artwork':
+      // Stone plinth; the 3D relief made from the photo is drawn on top by ArtworkReliefs.
+      return [
+        { geo: 'box', pos: [0, 0.3, 0], size: [w, 0.6, d], color: c, castShadow: true },
+        { geo: 'box', pos: [0, 0.62, d / 2 - 0.15], size: [0.9, 0.04, 0.25], color: '#4a4741' },
+      ];
     case 'bus_stop':
       return [
         { geo: 'box', pos: [0, 2.5, 0], size: [w, 0.12, d], color: '#e8e4dc' },

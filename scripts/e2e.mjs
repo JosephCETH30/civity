@@ -22,6 +22,14 @@ async function newPage(name, opts = {}) {
   return page;
 }
 const step = (s) => console.log('•', s);
+// Account form: sign up with name, email and password (unique email per run).
+const signUp = async (page, name) => {
+  await page.getByRole('button', { name: 'Create an account' }).click();
+  await page.getByLabel('Name').fill(name);
+  await page.getByLabel('Email').fill(`${name.toLowerCase()}-${Date.now()}@e2e.test`);
+  await page.getByLabel('Password').fill('password123');
+  await page.getByRole('button', { name: 'Create account' }).click();
+};
 const officeCount = async (page) => {
   const btn = page.locator('section:has(h2:text-is("City hierarchy")) button').filter({ hasText: /^Office/ }).first();
   if (!(await btn.count())) return 0;
@@ -39,8 +47,7 @@ try {
   console.log(`  landing visible in ${Date.now() - t0} ms (localhost)`);
   await shot(A, '01-landing');
   await A.getByRole('link', { name: 'Create a city room' }).click();
-  await A.getByLabel('Username').fill('Alice');
-  await A.getByRole('button', { name: 'Continue' }).click();
+  await signUp(A, 'Alice');
   await A.getByLabel('Room name').fill('E2E City');
   await A.getByRole('button', { name: 'Create city' }).click();
   await A.waitForURL(/\/room\//);
@@ -54,8 +61,7 @@ try {
   // --- B: second desktop user joins by invite link with a username ---
   const B = await newPage('B', { viewport: { width: 1280, height: 800 } });
   await B.goto(`${BASE}/join/${code}`);
-  await B.getByLabel('Username').fill('Bob');
-  await B.getByRole('button', { name: 'Join city' }).click();
+  await signUp(B, 'Bob');
   await B.getByRole('button', { name: /Enter as Bob/ }).click();
   await B.getByRole('toolbar', { name: 'Meeting and city controls' }).waitFor({ timeout: 30000 });
   step('B joined');
@@ -63,8 +69,7 @@ try {
   // --- C: mobile user joins ---
   const C = await newPage('C', { ...devices['Pixel 7'] });
   await C.goto(`${BASE}/join/${code}`);
-  await C.getByLabel('Username').fill('Citra');
-  await C.getByRole('button', { name: 'Join city' }).click();
+  await signUp(C, 'Citra');
   await C.getByRole('button', { name: /Enter as Citra/ }).click();
   await C.getByRole('navigation', { name: 'Room controls' }).waitFor({ timeout: 30000 });
   const overflow = await C.evaluate(() => document.documentElement.scrollWidth - innerWidth);
@@ -121,13 +126,14 @@ try {
 
   // --- Movement sync: B walks, A sees B's location change ---
   await A.getByRole('button', { name: 'People', exact: true }).click();
-  const locOf = async () => (await A.getByRole('dialog', { name: 'Participants' }).innerText()).match(/Bob[\s\S]*?at (-?\d+), (-?\d+)/)?.slice(1).join(',');
+  const locOf = async () => (await A.getByRole('dialog', { name: 'Participants' }).innerText()).match(/Bob[\s\S]*?(-?\d+), (-?\d+)/)?.slice(1).join(',');
   await A.waitForTimeout(800);
   const l0 = await locOf();
   await B.locator('main canvas').first().click({ position: { x: 5, y: 5 } });
   await B.keyboard.down('KeyW'); await B.waitForTimeout(1500); await B.keyboard.up('KeyW');
   await A.waitForTimeout(1500);
   const l1 = await locOf();
+  if (!(l0 && l1 && l0 !== l1)) console.log('participants panel text:', JSON.stringify(await A.getByRole('dialog', { name: 'Participants' }).innerText()));
   assert.ok(l0 && l1 && l0 !== l1, `B position should change on A (${l0} → ${l1})`);
   step(`movement synced (Bob ${l0} → ${l1})`);
   await A.getByRole('button', { name: 'Close Participants' }).click();

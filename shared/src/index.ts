@@ -78,9 +78,11 @@ export const profileUpdateSchema = z.object({
 // ---------- City objects ----------
 export const OBJECT_TYPES = [
   'residential', 'office', 'commercial', 'school', 'hospital', 'park',
-  'road', 'tree', 'streetlight', 'bench', 'bus_stop',
+  'road', 'tree', 'streetlight', 'bench', 'bus_stop', 'artwork',
 ] as const;
 export type ObjectType = (typeof OBJECT_TYPES)[number];
+/** Types users place from the asset library. Photo sculptures (artwork) are only made through the photo-to-3D studio. */
+export const PLACEABLE_TYPES = OBJECT_TYPES.filter((t) => t !== 'artwork');
 export const BUILDING_TYPES: ObjectType[] = ['residential', 'office', 'commercial', 'school', 'hospital'];
 export const STYLES = ['modern', 'classic', 'industrial'] as const;
 
@@ -96,6 +98,7 @@ export const OBJECT_INFO: Record<ObjectType, { label: string; footprint: [number
   streetlight: { label: 'Streetlight', footprint: [1, 1], color: '#2f3236' },
   bench: { label: 'Bench', footprint: [2, 1], color: '#8a6446' },
   bus_stop: { label: 'Bus stop', footprint: [3, 2], color: '#2b6f8f' },
+  artwork: { label: 'Photo sculpture', footprint: [3, 1.6], color: '#d6cdbd' },
 };
 
 const finite = z.number().finite();
@@ -108,6 +111,11 @@ export const objectPropsSchema = z
     color: hexColor.optional(),
     style: z.enum(STYLES).optional(),
     name: z.string().trim().max(60).optional(),
+    // photo sculptures (artwork): uploaded image + AI depth map, and how they are shaped
+    assetId: z.uuid().optional(),
+    depthScale: z.number().min(0.1).max(3).optional(),
+    cutout: z.number().min(0).max(0.8).optional(),
+    aspect: z.number().min(0.2).max(5).optional(),
   })
   .strict();
 
@@ -262,13 +270,13 @@ export type ServerMessage =
 
 // ---------- AI commands (LLM output is validated against this; never executed as code) ----------
 export const aiObjectSchema = z.object({
-  type: z.enum(OBJECT_TYPES),
+  type: z.enum(OBJECT_TYPES).exclude(['artwork']),
   floors: z.number().int().min(1).max(40).optional(),
   style: z.enum(STYLES).optional(),
   color: hexColor.optional(),
   name: z.string().max(60).optional(),
   position: z.object({ x: finite, z: finite }).optional(),
-  near: z.enum(OBJECT_TYPES).optional(),
+  near: z.enum(OBJECT_TYPES).exclude(['artwork']).optional(),
   rotationY: finite.optional(),
   scale: z.number().min(0.25).max(4).optional(),
 });

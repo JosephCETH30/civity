@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { BUILDING_TYPES, OBJECT_INFO, OBJECT_TYPES, STYLES, type CityObject, type ObjectSpec, type ObjectType } from '@civitas/shared';
+import { BUILDING_TYPES, OBJECT_INFO, OBJECT_TYPES, PLACEABLE_TYPES, STYLES, type CityObject, type ObjectSpec, type ObjectType } from '@civitas/shared';
 import { useWorld } from '../../stores/world';
 import { realtime } from '../../services/realtime';
 import { Button, Input, Select } from '../../components/ui';
@@ -19,7 +19,7 @@ export function AssetLibrary({ compact = false }: { compact?: boolean }) {
   return (
     <div>
       <div className={cn('grid gap-1.5', compact ? 'grid-cols-4' : 'grid-cols-3')}>
-        {OBJECT_TYPES.map((t) => {
+        {PLACEABLE_TYPES.map((t) => {
           const active = tool.kind === 'place' && tool.type === t;
           return (
             <button
@@ -37,6 +37,7 @@ export function AssetLibrary({ compact = false }: { compact?: boolean }) {
           );
         })}
       </div>
+      <p className="mt-2.5 text-xs text-muted-foreground">Photo sculptures: walk into a park and press E to turn a photo into 3D.</p>
       {tool.kind === 'place' && (
         <p className="mt-2.5 text-xs text-muted-foreground">Click the ground to place a {OBJECT_INFO[tool.type].label.toLowerCase()}. Pick it again to stop.</p>
       )}
@@ -142,6 +143,18 @@ export function PropertiesPanel() {
                     <option value="">Default</option>
                     {STYLES.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
                   </Select>
+                </Row>
+              </>
+            )}
+            {obj.type === 'artwork' && (
+              <>
+                <Row label={`Depth ${(obj.props.depthScale ?? 0.8).toFixed(1)} m`}>
+                  <input type="range" min={0.2} max={2} step={0.1} value={obj.props.depthScale ?? 0.8} className="w-full accent-[var(--primary)]"
+                    onChange={(e) => update({ props: { depthScale: +e.target.value } })} aria-label="Sculpture depth" />
+                </Row>
+                <Row label={`Background ${Math.round((obj.props.cutout ?? 0) * 100)}%`}>
+                  <input type="range" min={0} max={0.6} step={0.05} value={obj.props.cutout ?? 0} className="w-full accent-[var(--primary)]"
+                    onChange={(e) => update({ props: { cutout: +e.target.value } })} aria-label="Remove background" />
                 </Row>
               </>
             )}

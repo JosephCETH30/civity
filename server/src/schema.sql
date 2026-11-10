@@ -126,3 +126,15 @@ create table if not exists avatar_images (
   created_at timestamptz not null default now()
 );
 create index if not exists avatar_images_user_idx on avatar_images(user_id);
+
+-- Photo sculptures: the uploaded photo and the AI depth map (made in the browser) for an `artwork` object.
+create table if not exists artworks (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references rooms(id) on delete cascade,
+  user_id uuid references users(id) on delete set null,
+  image bytea not null,
+  image_mime text not null check (image_mime in ('image/jpeg', 'image/png', 'image/webp')),
+  depth bytea not null, -- grayscale PNG, brighter = closer
+  created_at timestamptz not null default now()
+);
+create index if not exists artworks_room_idx on artworks(room_id);

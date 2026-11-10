@@ -304,6 +304,11 @@ export class CityRoom {
     if (!parsed.success) throw new WorldError('Invalid object: ' + parsed.error.issues[0]?.message);
     if (this.objects.size >= MAX_OBJECTS) throw new WorldError(`Object limit reached (${MAX_OBJECTS})`);
     const spec = normalizeSpec(parsed.data, this.meta.worldSize);
+    if (spec.type === 'artwork') {
+      // A photo sculpture must point at an image uploaded to this same room.
+      const ok = spec.props.assetId && (await q('select 1 from artworks where id = $1 and room_id = $2', [spec.props.assetId, this.meta.id])).length;
+      if (!ok) throw new WorldError('Make a photo sculpture with the photo-to-3D studio in a park');
+    }
     const [row] = await q(
       `insert into city_objects (room_id, object_type, asset_id, position, rotation, scale, properties, created_by)
        values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
@@ -341,6 +346,9 @@ export class CityRoom {
     try {
       await client.query('begin');
       await client.query('delete from city_objects where id = $1 and room_id = $2', [id, this.meta.id]);
+      if (cur.type === 'artwork' && cur.props.assetId) {
+        await client.query('delete from artworks where id = $1 and room_id = $2', [cur.props.assetId, this.meta.id]);
+      }
       // Deleting a stop removes it from routes; routes with <2 stops are dropped.
       if (cur.type === 'bus_stop') {
         for (const r of this.routes.values()) {

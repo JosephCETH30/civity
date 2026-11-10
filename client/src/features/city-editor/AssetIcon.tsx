@@ -12,6 +12,7 @@ const PATHS: Record<ObjectType, React.ReactNode> = {
   tree: <><path d="M12 21c.3-4 .2-8-.6-11" /><path d="M11.4 10C9 7.5 6 7.2 4 8.5M11.4 10c1-3 4-4.5 7-3.6M11.4 10c3 .2 5.2 2 6 4.5M11.4 10c-2.5.6-4.5 2.7-5 5.2" /></>,
   streetlight: <><path d="M8 21V5c0-1 .8-2 2-2h5" /><path d="M13.5 3v2.5h3V3" /><path d="M6 21h4" /></>,
   bench: <><path d="M4 11h16M4 14h16M6 14v5M18 14v5M5 11V8h14v3" /></>,
+  artwork: <><rect x="5" y="3" width="14" height="12" rx="0.5" /><path d="m7 13 3.5-4 2.5 3 1.5-1.5L17 13" /><circle cx="14.5" cy="6.5" r="1" /><path d="M8 21h8M12 15v6" /></>,
   bus_stop: <><path d="M6 21V4" /><rect x="3.5" y="4" width="5" height="5" rx="1" /><rect x="11" y="9" width="10" height="9" rx="1.5" /><path d="M11 13h10M13.5 18v2M18.5 18v2" /></>,
 };
 

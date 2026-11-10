@@ -168,6 +168,42 @@ export function createApp(manager: RoomManager) {
     res.json(await profileFor(req));
   });
 
+  // ---------- Photo sculptures (photo -> AI depth map -> 3D relief) ----------
+  // The depth model runs in the browser; the server only validates and stores the two images.
+  const imageOf = (dataUrl: unknown, maxBytes: number, types: string[]) => {
+    const m = typeof dataUrl === 'string' && dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return null;
+    const buf = Buffer.from(m[2], 'base64');
+    const magic = buf.subarray(0, 12).toString('hex');
+    const mime = magic.startsWith('89504e47') ? 'image/png' : magic.startsWith('ffd8ff') ? 'image/jpeg' : magic.startsWith('52494646') && magic.endsWith('57454250') ? 'image/webp' : null;
+    if (!mime || !types.includes(mime) || buf.length > maxBytes) return null;
+    return { buf, mime };
+  };
+  api.post('/rooms/:id/artworks', requireUser, async (req, res) => {
+    if (!uploadLimit(req.identity!.sub)) return bad(res, 429, 'Too many uploads. Try again in a minute.');
+    const room = await getRoom(String(req.params.id));
+    if (!room) return bad(res, 404, 'Room not found');
+    const access = await resolveAccess(room, req.identity, false);
+    if (!access.ok) return bad(res, access.status, access.error);
+    if (access.role !== 'owner' && access.role !== 'editor') return bad(res, 403, 'You need edit permission to add sculptures');
+    const image = imageOf(req.body?.image, 1_200_000, ['image/jpeg', 'image/png', 'image/webp']);
+    if (!image) return bad(res, 400, 'Photo must be a JPEG, PNG or WebP under 1.2 MB');
+    const depth = imageOf(req.body?.depth, 400_000, ['image/png']);
+    if (!depth) return bad(res, 400, 'Depth map must be a PNG under 400 KB');
+    const [row] = await q('insert into artworks (room_id, user_id, image, image_mime, depth) values ($1, $2, $3, $4, $5) returning id', [
+      room.id, req.identity!.sub, image.buf, image.mime, depth.buf,
+    ]);
+    res.status(201).json({ id: row.id });
+  });
+  api.get('/artworks/:id/:kind', async (req, res) => {
+    const { id, kind } = req.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id) || (kind !== 'image' && kind !== 'depth')) return bad(res, 404, 'Not found');
+    const [a] = await q(`select ${kind === 'image' ? 'image as data, image_mime as mime' : "depth as data, 'image/png' as mime"} from artworks where id = $1`, [id]);
+    if (!a) return bad(res, 404, 'Not found');
+    res.set({ 'content-type': a.mime, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' });
+    res.send(a.data);
+  });
+
   api.get('/avatars/:id', async (req, res) => {
     if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return bad(res, 404, 'Not found');
     const [img] = await q('select mime, data from avatar_images where id = $1', [req.params.id]);
@@ -334,6 +370,8 @@ export function createApp(manager: RoomManager) {
     }
   });
 
+  // Unknown API routes: explicit JSON instead of Express's HTML 404 (e.g. a new client talking to an old server).
+  api.use((req, res) => bad(res, 404, `This server does not have ${req.method} /api${req.path}. Restart the server so it runs the latest code.`));
   app.use('/api', api);
   app.use('/uploads', express.static(fileURLToPath(config.uploadDir), { maxAge: '7d', immutable: true }));
 

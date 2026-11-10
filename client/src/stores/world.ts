@@ -27,6 +27,8 @@ interface WorldState {
   selectedId: string | null;
   /** Building the local player is inside (renders its interior), or null when outdoors. */
   inside: string | null;
+  /** Park whose photo-to-3D studio is open, or null. */
+  artStudio: string | null;
   tool: Tool;
   transformMode: 'translate' | 'rotate' | 'scale';
   cameraMode: CameraMode;
@@ -53,6 +55,7 @@ const initial = () => ({
   serverOffset: 0,
   selectedId: null,
   inside: null as string | null,
+  artStudio: null as string | null,
   tool: { kind: 'select' } as Tool,
 });
 

@@ -1,7 +1,7 @@
 // AI city assistant: natural language -> validated AiCommand -> the same world operations manual editing uses.
 // The model only ever produces JSON data. Nothing it returns is executed as code.
 import {
-  aiCommandSchema, analyzeCity, BUILDING_TYPES, defaultSpec, OBJECT_INFO, STOP_COVERAGE_RADIUS, STYLES,
+  aiCommandSchema, analyzeCity, BUILDING_TYPES, defaultSpec, OBJECT_INFO, STOP_COVERAGE_RADIUS, STYLES, PLACEABLE_TYPES,
   type AiCommand, type AiResponse, type CityAnalysis, type CityObject, type CityRoute, type ObjectType,
 } from '@civitas/shared';
 import { config } from './config.ts';
@@ -10,7 +10,9 @@ import type { CityRoom } from './realtime.ts';
 type XZ = { x: number; z: number };
 
 // Order matters: longer / more specific phrases first. Includes basic Indonesian keywords.
-const TYPE_WORDS: [RegExp, ObjectType][] = [
+// Photo sculptures are made in the photo-to-3D studio, never from text.
+type TextType = Exclude<ObjectType, 'artwork'>;
+const TYPE_WORDS: [RegExp, TextType][] = [
   [/rumah sakit|hospital|clinic|klinik/, 'hospital'],
   [/bus ?stop|halte|stop\b|station/, 'bus_stop'],
   [/street ?light|lamp|lampu/, 'streetlight'],
@@ -84,7 +86,7 @@ async function callGemini(prompt: string, room: CityRoom, origin: XZ, analysis: 
     .map((o) => ({ id: o.id, name: o.props.name ?? 'stop', x: o.position.x, z: o.position.z }));
   const system = `You convert a user's request about a 3D city into ONE JSON command. Output JSON only.
 Schema (TypeScript):
-type Obj = { type: ${Object.keys(OBJECT_INFO).map((t) => `"${t}"`).join('|')}; floors?: 1-40 (buildings only); style?: "modern"|"classic"|"industrial"; color?: "#rrggbb"; name?: string; position?: {x:number,z:number}; near?: <same type enum>; rotationY?: radians; scale?: 0.25-4 }
+type Obj = { type: ${PLACEABLE_TYPES.map((t) => `"${t}"`).join('|')}; floors?: 1-40 (buildings only); style?: "modern"|"classic"|"industrial"; color?: "#rrggbb"; name?: string; position?: {x:number,z:number}; near?: <same type enum>; rotationY?: radians; scale?: 0.25-4 }
 type Command =
  | { action: "create_objects"; objects: Obj[] /* 1-10 */ }
  | { action: "create_route"; name: string; stopIds: string[] /* ids from the stop list, in travel order */; stopCount?: number }

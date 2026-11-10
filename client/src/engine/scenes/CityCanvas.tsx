@@ -11,6 +11,7 @@ import { bindKeyboard } from '../core/interactions';
 import { CityObjects, ghostMaterial, SingleObject } from '../objects/CityObjects';
 import { Terrain } from './Terrain';
 import { Interior } from '../objects/Interior';
+import { ArtworkReliefs } from '../objects/ArtworkReliefs';
 import { objectMatrix } from '../objects/parts';
 import { Avatar } from '../objects/Avatar';
 import { CameraRig } from '../cameras/CameraRig';
@@ -80,6 +81,7 @@ function Scene() {
   const insideObj = insideId ? objectsMap[insideId] : undefined;
   const me = self ? players[self.sessionId] : undefined;
 
+  const allObjects = useMemo(() => Object.values(objectsMap), [objectsMap]);
   const unselected = useMemo(() => Object.values(objectsMap).filter((o) => o.id !== selectedId), [objectsMap, selectedId]);
   const selected = selectedId ? objectsMap[selectedId] : undefined;
   const routes = useMemo(() => Object.values(routesMap), [routesMap]);
@@ -125,6 +127,7 @@ function Scene() {
 
       <CityObjects objects={unselected} standardMaterial={profile.standardMaterial} shadows={profile.shadows} details={profile.details} viewDistance={profile.viewDistance} chunk={profile.chunk} onPick={onPick} />
       {insideObj && <Interior building={insideObj} />}
+      <ArtworkReliefs objects={allObjects} lowDetail={quality === 'low'} />
       {selected && <SelectedObject object={selected} standard={profile.standardMaterial} />}
       {tool.kind === 'place' && <Ghost type={tool.type} worldSize={room.worldSize} />}
 

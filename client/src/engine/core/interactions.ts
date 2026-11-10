@@ -29,17 +29,22 @@ const toWorld = (f: Frame, lx: number, lz: number) => ({ x: f.cx + lx * f.cos + 
 let cacheFor: Record<string, CityObject> | null = null;
 let solids: { o: CityObject; f: Frame; hw: number; hd: number }[] = [];
 let benches: Seat[] = [];
+let parks: { o: CityObject; f: Frame; hw: number; hd: number }[] = [];
 function ensureCache() {
   const objects = useWorld.getState().objects;
   if (objects === cacheFor) return;
   cacheFor = objects;
   solids = [];
   benches = [];
+  parks = [];
   for (const o of Object.values(objects)) {
     const f = frameOf(o);
     if (ENTERABLE.includes(o.type)) {
       const [w, d] = OBJECT_INFO[o.type].footprint;
       solids.push({ o, f, hw: (w * o.scale.x) / 2, hd: (d * o.scale.z) / 2 });
+    } else if (o.type === 'park') {
+      const [w, d] = OBJECT_INFO.park.footprint;
+      parks.push({ o, f, hw: (w * o.scale.x) / 2, hd: (d * o.scale.z) / 2 });
     } else if (o.type === 'bench') {
       for (const lx of [-0.5, 0.5]) {
         const p = toWorld(f, lx * o.scale.x, 0.05);
@@ -88,6 +93,13 @@ export function availableAction(): Action | null {
   if (p.y > 0.05) return null;
   const s = nearestSeat(benches);
   if (s) return { label: 'Sit on bench', run: () => sit(s) };
+  // Parks host the photo-to-3D studio (M7: AI-based graphics).
+  for (const pk of parks) {
+    const l = toLocal(pk.f, p.x, p.z);
+    if (Math.abs(l.lx) <= pk.hw + 1 && Math.abs(l.lz) <= pk.hd + 1) {
+      return { label: 'Make 3D art from a photo', run: () => useWorld.getState().set({ artStudio: pk.o.id }) };
+    }
+  }
   let best: { o: CityObject; d: number } | null = null;
   for (const { o } of solids) {
     const door = exteriorDoor(o);
