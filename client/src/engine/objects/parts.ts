@@ -48,7 +48,10 @@ export const ENTERABLE: ObjectType[] = ['residential', 'office', 'commercial', '
 
 const FRONDS = 6;
 
-export function partsFor(o: Pick<CityObject, 'type' | 'props'>): Part[] {
+/** For roads: which sides (local -x / +x) join another road. Joined sides get asphalt instead of a kerb. */
+export interface RoadJoin { neg: boolean; pos: boolean }
+
+export function partsFor(o: Pick<CityObject, 'type' | 'props'>, join?: RoadJoin): Part[] {
   const info = OBJECT_INFO[o.type];
   const [w, d] = info.footprint;
   const c = o.props.color ?? (o.props.style === 'modern' && o.type === 'office' ? '#b9c7d0' : info.color);
@@ -99,13 +102,21 @@ export function partsFor(o: Pick<CityObject, 'type' | 'props'>): Part[] {
         { geo: 'cyl', pos: [0, 0.52, 0], size: [2.7, 0.06, 2.7], color: '#5fb8c4' },
         { geo: 'cyl', pos: [0, 0.9, 0], size: [0.35, 0.8, 0.35], color: '#d6cdbd' },
       ];
-    case 'road':
+    case 'road': {
+      // At junctions, turns and corners the joined side is plain asphalt (no white kerb, no centre line),
+      // so crossing roads read as one continuous surface.
+      const kerb = (side: -1 | 1, open: boolean): Part =>
+        open
+          ? { geo: 'box', pos: [side * 3.5, 0.04, 0], size: [1, 0.08, d], color: c }
+          : { geo: 'box', pos: [side * 3.5, 0.1, 0], size: [1, 0.2, d], color: '#d8d1c4' };
+      const joined = !!join && (join.neg || join.pos);
       return [
         { geo: 'box', pos: [0, 0.04, 0], size: [6, 0.08, d], color: c },
-        { geo: 'box', pos: [-3.5, 0.1, 0], size: [1, 0.2, d], color: '#d8d1c4' },
-        { geo: 'box', pos: [3.5, 0.1, 0], size: [1, 0.2, d], color: '#d8d1c4' },
-        { geo: 'box', pos: [0, 0.085, 0], size: [0.15, 0.01, d * 0.45], color: '#efe9da' },
+        kerb(-1, !!join?.neg),
+        kerb(1, !!join?.pos),
+        { geo: 'box', pos: [0, 0.085, 0], size: joined ? [0, 0, 0] : [0.15, 0.01, d * 0.45], color: '#efe9da' },
       ];
+    }
     case 'tree': {
       // Palm: tapered trunk, coconut cluster, ring of drooping fronds.
       const parts: Part[] = [
@@ -171,4 +182,20 @@ export function tintFor(id: string) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
   return 0.93 + ((h >>> 0) % 1000) / 1000 * 0.1;
+}
+
+/**
+ * Road joins for every road tile: a side is joined when another road sits one tile (8 m) away in that
+ * lateral direction, i.e. the tile is part of a junction, turn or corner.
+ */
+export function roadJoins(objects: Pick<CityObject, 'id' | 'type' | 'position' | 'rotationY'>[]) {
+  const roads = objects.filter((o) => o.type === 'road');
+  const near = (x: number, z: number) => roads.some((r) => Math.abs(r.position.x - x) < 1.5 && Math.abs(r.position.z - z) < 1.5);
+  const out = new Map<string, RoadJoin>();
+  for (const r of roads) {
+    // local +x in world space for this tile's rotation
+    const lx = Math.cos(r.rotationY), lz = -Math.sin(r.rotationY);
+    out.set(r.id, { neg: near(r.position.x - lx * 8, r.position.z - lz * 8), pos: near(r.position.x + lx * 8, r.position.z + lz * 8) });
+  }
+  return out;
 }
