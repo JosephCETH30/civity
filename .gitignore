@@ -1,0 +1,13 @@
+node_modules/
+client/dist/
+server/uploads/
+
+# secrets: every .env variant except the placeholder template
+.env
+.env.*
+!.env.example
+*.pem
+
+*.log
+.DS_Store
+e2e-artifacts/

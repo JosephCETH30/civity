@@ -1,0 +1,29 @@
+# Render blueprint: one free web service that serves the API, the WebSocket rooms and the built client.
+# Database: Neon (free Postgres), voice/video: LiveKit Cloud. Fill the `sync: false` values in the Render dashboard.
+services:
+  - type: web
+    name: civitas
+    runtime: node
+    plan: free
+    region: singapore
+    # Dev dependencies are needed to build the client (vite, typescript) and to run the server (tsx).
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: DATABASE_URL # Neon connection string, with ?sslmode=require
+        sync: false
+      - key: LIVEKIT_URL # wss://<project>.livekit.cloud
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: GEMINI_API_KEY # optional; without it the offline parser handles AI commands
+        sync: false
