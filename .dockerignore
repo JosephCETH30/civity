@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+client/dist
+server/uploads
+e2e-artifacts
+.git
+*.log
+.DS_Store
+# never bake secrets into the image; Spaces inject them as environment variables
+.env
+.env.*
+!.env.example

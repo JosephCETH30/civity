@@ -1,3 +1,13 @@
+---
+title: CIVITAS
+colorFrom: gray
+colorTo: yellow
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Meet inside a 3D city you build together
+---
+
 # CIVITAS — The City Is Your Meeting Room
 
 Multiplayer 3D city where people meet (voice, video, chat, screen share), build together, run a simple transport simulation and use an AI assistant. No sign-up: pick a username and join.
@@ -33,17 +43,18 @@ node scripts/e2e.mjs http://localhost:3001   # browser E2E with installed Chrome
 
 `createdb civitas_test` once before `npm test`. The E2E script drives 3 browsers (2 desktop, 1 Pixel-7 emulation) through: create room → join by invite → presence → chat → place object → AI build + analysis → movement sync → mic + camera via LiveKit → shared simulation → reload persistence → mobile 2D mode. Set `SKIP_MEDIA=1` when LiveKit is not running. Screenshots land in `e2e-artifacts/`.
 
-## Deploy for free (Render + Neon + LiveKit Cloud + your domain)
+## Deploy for free, no card (Hugging Face Spaces + Neon + LiveKit Cloud)
 
-Everything runs as one Node process (API, WebSocket rooms, built client). `render.yaml` describes it.
+The whole app is one Docker container (`Dockerfile`): API, WebSocket rooms and the built client on port 7860. The front matter at the top of this README is the Space configuration.
 
-1. **Database (Neon, free):** create a project in region *AWS Asia Pacific (Singapore)*. Copy the connection string (it ends in `?sslmode=require`). Tables and demo rooms are created on first boot.
-2. **Voice/video (LiveKit Cloud, free Build plan):** create a project, then copy the WebSocket URL (`wss://...livekit.cloud`), API key and API secret.
-3. **Code on GitHub:** push this folder to a GitHub repository (`.env`, `node_modules`, builds and uploads are git-ignored).
-4. **Server (Render, free):** New → Blueprint → pick the repository. Render reads `render.yaml`, generates `AUTH_SECRET`, and asks for `DATABASE_URL`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (and optionally `GEMINI_API_KEY`). The first deploy gives you `https://civitas-xxxx.onrender.com`.
-5. **Domain (Cloudflare DNS):** in Render → Settings → Custom Domains add e.g. `civitas.quesera.id`. In Cloudflare DNS add `CNAME civitas → civitas-xxxx.onrender.com` with proxy status **DNS only** (grey cloud) so Render can issue the HTTPS certificate. For the bare `quesera.id`, use a CNAME on `@` (Cloudflare flattens it).
+1. **Database (Neon, free):** project in *AWS Asia Pacific (Singapore)*. Use its connection string with `?sslmode=verify-full` at the end.
+2. **Voice/video (LiveKit Cloud, free Build plan):** create an API key; keep the URL, key and secret.
+3. **Space:** on huggingface.co create a new Space → SDK **Docker** → **Blank** → hardware **CPU basic (free)**.
+4. **Secrets:** Space → Settings → *Variables and secrets* → add as **Secrets**: `DATABASE_URL`, `AUTH_SECRET` (long random string), `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
+5. **Push the code:** `git remote add hf https://huggingface.co/spaces/<user>/<space>` then `git push hf main` (username = your HF name, password = an HF access token with *write* scope). The Space builds the image and starts it at `https://<user>-<space>.hf.space`. Tables and demo rooms are created on first boot.
+6. **Custom domain (optional):** a Cloudflare Worker on your domain that forwards requests (including WebSocket upgrades) to the `hf.space` URL.
 
-Free-tier behaviour to expect: Render stops the service after 15 minutes with no visitors and the next visit takes about a minute to wake it (open rooms keep it awake). Neon sleeps after 5 minutes idle and wakes on the next query; the health check deliberately does not touch the database so it can sleep. LiveKit's Build plan hard-stops at its monthly minutes instead of billing. Avatar images are stored in Postgres because Render's disk is wiped on restart.
+Free-tier behaviour: a Space sleeps after 48 hours without visitors and wakes on the next visit; Neon sleeps after 5 minutes idle; LiveKit's Build plan hard-stops at its monthly minutes. Rooms are saved in Postgres, so sleeping loses nothing. Avatar images live in Postgres because the container disk is not persistent. `render.yaml` is kept for anyone who prefers Render (it needs a card on file).
 
 ## Architecture
 
