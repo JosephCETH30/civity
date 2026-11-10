@@ -11,7 +11,8 @@
     "build": "npm run build -w client",
     "start": "npm start -w server",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present",
+    "start:public": "npm run build && npm run start:public -w server"
   },
   "devDependencies": {
     "playwright": "^1.65.0"

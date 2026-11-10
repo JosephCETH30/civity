@@ -43,6 +43,16 @@ node scripts/e2e.mjs http://localhost:3001   # browser E2E with installed Chrome
 
 `createdb civitas_test` once before `npm test`. The E2E script drives 3 browsers (2 desktop, 1 Pixel-7 emulation) through: create room → join by invite → presence → chat → place object → AI build + analysis → movement sync → mic + camera via LiveKit → shared simulation → reload persistence → mobile 2D mode. Set `SKIP_MEDIA=1` when LiveKit is not running. Screenshots land in `e2e-artifacts/`.
 
+## Go live from your own machine (Cloudflare Tunnel, free, no card)
+
+This is how civitas.quesera.id is served: the production server runs on a laptop and a Cloudflare Tunnel publishes it over HTTPS (WebSockets included). It is online while that machine and both processes run.
+
+1. `.env` holds the secrets (`AUTH_SECRET`, `LIVEKIT_*`). `.env.production` (git-ignored) overrides `NODE_ENV=production`, `PORT=8080` and `DATABASE_URL` (Neon, `?sslmode=verify-full`).
+2. Start the server: `npm run start:public` (builds the client, then serves everything on port 8080).
+3. Start the tunnel: `cloudflared tunnel run civitas` (config in `~/.cloudflared/config.yml` routes `civitas.quesera.id` to `http://localhost:8080` only).
+
+One-time setup that was already done: `cloudflared tunnel login`, `cloudflared tunnel create civitas`, `cloudflared tunnel route dns civitas civitas.quesera.id`, and the domain's nameservers pointed to Cloudflare. Hosted alternatives that need no laptop (Render, Hugging Face Docker Spaces) now ask for a card or a paid plan; `render.yaml` and `Dockerfile` remain for that case.
+
 ## Deploy for free, no card (Hugging Face Spaces + Neon + LiveKit Cloud)
 
 The whole app is one Docker container (`Dockerfile`): API, WebSocket rooms and the built client on port 7860. The front matter at the top of this README is the Space configuration.
