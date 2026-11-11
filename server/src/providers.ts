@@ -38,7 +38,7 @@ export async function groqChat(opts: { system: string; user: string | GroqPart[]
   return text.trim();
 }
 
-// ---------- Gemini: text (fallback) and image output ----------
+// ---------- Gemini: text (fallback) ----------
 export async function geminiText(system: string, user: string) {
   const g = config.gemini;
   if (!g) throw new ProviderError('gemini', null, 'GEMINI_API_KEY is not set');
@@ -57,39 +57,46 @@ export async function geminiText(system: string, user: string) {
 }
 
 /**
- * Edit a photo with a text instruction; returns the new image. Uses the Interactions API (the documented path for
- * Gemini image models). Response: steps[].content[] blocks of type "image" with base64 data.
+ * Image output via Pollinations. With POLLINATIONS_API_KEY: true photo editing (OpenAI-style /v1/images/edits, the
+ * photo is the reference). Without a key: the keyless classic endpoint, text-to-image only (1 image / 45 s per IP),
+ * so the prompt carries the vision model's description of the photo instead.
  */
-export async function geminiEditImage(instruction: string, image: { mime: string; base64: string }): Promise<{ mime: string; base64: string }> {
-  const g = config.gemini;
-  if (!g) throw new ProviderError('gemini', null, 'GEMINI_API_KEY is not set');
-  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': g.key, 'Api-Revision': '2026-05-20' },
-    body: JSON.stringify({
-      model: g.image,
-      input: [
-        { type: 'text', text: instruction },
-        { type: 'image', mime_type: image.mime, data: image.base64 },
-      ],
-      response_format: { type: 'image', mime_type: 'image/jpeg', image_size: '1K' },
-    }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  const data = await read(res, 'gemini');
-  const steps: any[] = Array.isArray(data?.steps) ? data.steps : [];
-  for (const step of steps) {
-    for (const block of step?.content ?? []) {
-      if (block?.type === 'image' && typeof block.data === 'string') return { mime: block.mime_type || block.mimeType || 'image/jpeg', base64: block.data };
+export async function pollinationsImage(
+  instruction: string,
+  image: { mime: string; base64: string },
+  opts: { description?: string; portrait?: boolean } = {},
+): Promise<{ mime: string; base64: string }> {
+  const p = config.pollinations;
+  if (!p) throw new ProviderError('pollinations', null, 'Image generation is turned off on this server');
+  let res: Response;
+  if (p.key) {
+    const form = new FormData();
+    form.set('model', p.model);
+    form.set('prompt', instruction);
+    form.set('image', new Blob([Buffer.from(image.base64, 'base64')], { type: image.mime }), 'photo');
+    res = await fetch('https://gen.pollinations.ai/v1/images/edits', { method: 'POST', headers: { authorization: `Bearer ${p.key}` }, body: form, signal: AbortSignal.timeout(120_000) });
+  } else {
+    const prompt = `Photorealistic photograph. ${opts.description ? `Scene: ${opts.description} ` : ''}${instruction}`.slice(0, 1500);
+    const [w, h] = opts.portrait ? [768, 1024] : [1024, 768];
+    res = await fetch(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&enhance=false`, { signal: AbortSignal.timeout(120_000) });
+    if (res.status === 402 || res.status === 429) {
+      throw new ProviderError('pollinations', 429, 'The free image generator allows 1 image every 45 seconds for this server. Try again shortly, or set POLLINATIONS_API_KEY.');
     }
   }
-  // Older shape used by some examples.
-  if (typeof data?.output_image?.data === 'string') return { mime: data.output_image.mime_type || 'image/jpeg', base64: data.output_image.data };
-  throw new ProviderError('gemini', null, 'Gemini returned no image');
+  const type = res.headers.get('content-type') || '';
+  if (res.ok && type.startsWith('image/')) return { mime: type.split(';')[0], base64: Buffer.from(await res.arrayBuffer()).toString('base64') };
+  const data = await read(res, 'pollinations');
+  const item = data?.data?.[0];
+  if (typeof item?.b64_json === 'string') return { mime: 'image/png', base64: item.b64_json };
+  if (typeof item?.url === 'string') {
+    const img = await fetch(item.url, { signal: AbortSignal.timeout(60_000) });
+    if (img.ok) return { mime: (img.headers.get('content-type') || 'image/jpeg').split(';')[0], base64: Buffer.from(await img.arrayBuffer()).toString('base64') };
+  }
+  throw new ProviderError('pollinations', null, 'The image generator returned no image');
 }
 
 export const providers = () => ({
   text: config.groq ? 'groq' : config.gemini ? 'gemini' : 'offline',
   vision: config.groq ? 'groq' : 'none',
-  image: config.gemini ? 'gemini' : 'none',
+  image: !config.pollinations ? 'none' : config.pollinations.key ? 'pollinations-edit' : 'pollinations-free',
 });

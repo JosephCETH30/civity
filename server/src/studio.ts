@@ -2,7 +2,7 @@
 // Two stages, both server-side so the keys never reach the browser:
 //   1. analyse: a vision model describes the photo and writes an edit instruction for the chosen transformation.
 //   2. render:  an image model applies that instruction and returns the new photo.
-import { geminiEditImage, groqChat, ProviderError } from './providers.ts';
+import { groqChat, pollinationsImage } from './providers.ts';
 import { config } from './config.ts';
 
 export const TRANSFORMS = {
@@ -61,7 +61,6 @@ export async function analysePhoto(kind: TransformKind, params: StudioParams, im
   };
 }
 
-export async function renderEdit(instruction: string, image: { mime: string; base64: string }) {
-  if (!config.gemini) throw new ProviderError('gemini', null, 'Image editing needs GEMINI_API_KEY (Google AI Studio). Set it in .env and restart.');
-  return geminiEditImage(instruction, image);
+export async function renderEdit(kind: TransformKind, instruction: string, image: { mime: string; base64: string }, description?: string) {
+  return pollinationsImage(instruction, image, { description, portrait: kind === 'age' });
 }

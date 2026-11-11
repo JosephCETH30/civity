@@ -2,6 +2,7 @@
 process.env.DATABASE_URL ??= 'postgres://localhost:5432/civitas_test';
 process.env.GEMINI_API_KEY = ''; // always exercise the offline parser here
 process.env.GROQ_API_KEY = '';
+process.env.POLLINATIONS = 'off'; // no network calls from tests
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -255,7 +256,7 @@ test('a paused room comes back running after everyone left and it was unloaded',
   back.close();
 });
 
-test('fountain studio: analyse without providers falls back to the brief, render needs Gemini, viewers cannot create', async () => {
+test('fountain studio: analyse without providers falls back to the brief, render needs an image provider, viewers cannot create', async () => {
   const jpg = 'data:image/jpeg;base64,' + Buffer.from('ffd8ffe000104a4649460001', 'hex').toString('base64');
   assert.deepEqual((await api('/studio/capabilities')).json, { text: 'offline', vision: 'none', image: 'none' });
   const an = await api(`/rooms/${roomId}/studio/analyse`, { token: users[1].token, body: { image: jpg, kind: 'era', params: { year: 1960 } } });
@@ -265,7 +266,7 @@ test('fountain studio: analyse without providers falls back to the brief, render
   assert.equal((await api(`/rooms/${roomId}/studio/analyse`, { token: users[4].token, body: { image: jpg, kind: 'age', params: { age: 5 } } })).status, 403);
   const r = await api(`/rooms/${roomId}/studio/render`, { token: users[1].token, body: { image: jpg, kind: 'era', params: { year: 1960 }, instruction: an.json.instruction } });
   assert.equal(r.status, 502);
-  assert.match(r.json.error, /GEMINI_API_KEY/);
+  assert.match(r.json.error, /turned off/);
   assert.deepEqual((await api(`/rooms/${roomId}/studio`, { token: users[4].token })).json, []);
 });
 

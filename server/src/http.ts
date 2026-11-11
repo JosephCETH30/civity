@@ -249,12 +249,12 @@ export function createApp(manager: RoomManager) {
     const room = await studioAccess(req, res, true);
     if (!room) return;
     if (!studioLimit(req.identity!.sub)) return bad(res, 429, 'Studio limit reached (6 per minute). Try again shortly.');
-    const body = parse(studioBody.extend({ instruction: z.string().trim().min(10).max(1500) }), req.body, res);
+    const body = parse(studioBody.extend({ instruction: z.string().trim().min(10).max(1500), description: z.string().max(400).optional() }), req.body, res);
     if (!body) return;
     const image = imageOf(body.image, 1_500_000, ['image/jpeg', 'image/png', 'image/webp']);
     if (!image) return bad(res, 400, 'Photo must be a JPEG, PNG or WebP under 1.5 MB');
     try {
-      const out = await renderEdit(body.instruction, { mime: image.mime, base64: image.buf.toString('base64') });
+      const out = await renderEdit(body.kind, body.instruction, { mime: image.mime, base64: image.buf.toString('base64') }, body.description);
       const result = Buffer.from(out.base64, 'base64');
       const [row] = await q(
         'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id, created_at',

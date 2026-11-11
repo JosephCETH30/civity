@@ -64,7 +64,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
     if (!photo || !instruction.trim()) return;
     setBusy('render'); setError('');
     try {
-      const item = await api<Item>(`/rooms/${roomId}/studio/render`, { body: { image: photo, kind, params, instruction } });
+      const item = await api<Item>(`/rooms/${roomId}/studio/render`, { body: { image: photo, kind, params, instruction, description: analysis?.description || undefined } });
       setResult(item);
       setGallery((g) => [item, ...g]);
     } catch (err) { setError((err as Error).message); } finally { setBusy(null); }
@@ -132,12 +132,13 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
         {canEdit && (
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" disabled={!photo || !!busy} loading={busy === 'analyse'} onClick={analyse}>{analysis ? 'Analyse again' : '1. Analyse photo'}</Button>
-            <Button disabled={!photo || !instruction.trim() || !!busy || !imageReady} loading={busy === 'render'} onClick={render} title={imageReady ? '' : 'Needs GEMINI_API_KEY on the server'}>2. Generate</Button>
+            <Button disabled={!photo || !instruction.trim() || !!busy || !imageReady} loading={busy === 'render'} onClick={render} title={imageReady ? '' : 'Image generation is turned off on this server'}>2. Generate</Button>
             <Button variant="ghost" onClick={onBack}>Back</Button>
           </div>
         )}
-        {caps && !imageReady && (
-          <p className="text-xs text-amber-700">Image generation is not configured on this server yet (needs a Google AI Studio key as GEMINI_API_KEY). Analysis and the 3D relief still work.</p>
+        {caps && !imageReady && <p className="text-xs text-amber-700">Image generation is turned off on this server. Analysis and the 3D relief still work.</p>}
+        {caps?.image === 'pollinations-free' && (
+          <p className="text-xs text-muted-foreground">Free generator: makes a new realistic image from the AI's description (one image every 45 seconds for the whole server), so faces will not match exactly.</p>
         )}
       </div>
 
