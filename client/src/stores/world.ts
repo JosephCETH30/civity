@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatMessage, CityObject, CityRoute, LudoState, ObjectType, PlayerState, Role, RoomSummary, SimState } from '@civitas/shared';
+import type { BattleStats, ChatMessage, CityObject, CityRoute, LudoState, QuizState, ObjectType, PlayerState, Role, RoomSummary, SimState } from '@civitas/shared';
 import { hasWebGL, initialQuality, isTouchDevice, type QualityLevel } from '../engine/optimization/quality';
 
 export type ConnStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
@@ -33,6 +33,13 @@ interface WorldState {
   ludoTree: string | null;
   ludo: Record<string, LudoState>;
   ludoDice: { treeId: string; value: number; at: number } | null;
+  /** Which game the open tree panel shows, and the latest quiz states. */
+  treeGame: 'ludo' | 'quiz';
+  quiz: Record<string, QuizState>;
+  /** PvP battle: am I in it, everyone's stats (session id -> stats), and recent kills for the feed. */
+  inBattle: boolean;
+  battle: Record<string, BattleStats>;
+  killFeed: { id: number; text: string }[];
   tool: Tool;
   transformMode: 'translate' | 'rotate' | 'scale';
   cameraMode: CameraMode;
@@ -63,6 +70,11 @@ const initial = () => ({
   ludoTree: null as string | null,
   ludo: {} as Record<string, LudoState>,
   ludoDice: null as { treeId: string; value: number; at: number } | null,
+  treeGame: 'quiz' as 'ludo' | 'quiz',
+  quiz: {} as Record<string, QuizState>,
+  inBattle: false,
+  battle: {} as Record<string, BattleStats>,
+  killFeed: [] as { id: number; text: string }[],
   tool: { kind: 'select' } as Tool,
 });
 

@@ -105,7 +105,7 @@ export function availableAction(): Action | null {
   }
   if (tree) {
     const id = tree.id;
-    return { label: 'Play Ludo at this tree', run: () => useWorld.getState().set({ ludoTree: id }) };
+    return { label: 'Play at this tree (Quiz, Ludo)', run: () => useWorld.getState().set({ ludoTree: id }) };
   }
   // Parks host the photo-to-3D studio (M7: AI-based graphics).
   for (const pk of parks) {

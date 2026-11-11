@@ -18,6 +18,7 @@ import { CameraRig } from '../cameras/CameraRig';
 import { Environment } from '../lighting/Environment';
 import { Transit } from '../simulation/Transit';
 import { PROFILES, type QualityLevel } from '../optimization/quality';
+import { BattleScene } from '../combat/BattleScene';
 
 const DOWNGRADE: Record<QualityLevel, QualityLevel | null> = { high: 'balanced', balanced: 'low', low: null };
 
@@ -78,6 +79,7 @@ function Scene() {
   const profile = PROFILES[quality];
   const speaking = useMedia((s) => s.speaking);
   const insideId = useWorld((s) => s.inside);
+  const battle = useWorld((s) => s.battle);
   const insideObj = insideId ? objectsMap[insideId] : undefined;
   const me = self ? players[self.sessionId] : undefined;
 
@@ -88,6 +90,7 @@ function Scene() {
 
   const onPick = (id: string, e: ThreeEvent<MouseEvent>) => {
     const st = useWorld.getState();
+    if (st.inBattle && st.tool.kind === 'select') return; // clicks fire the blaster instead
     if (st.tool.kind === 'place') {
       if (!canEditNow()) return st.notify('You do not have edit permission', 'error');
       return realtime.send({ t: 'obj_add', spec: defaultSpec(st.tool.type, { x: e.point.x, y: 0, z: e.point.z }) });
@@ -108,6 +111,7 @@ function Scene() {
   const onGroundClick = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 6) return; // was a camera drag
     const st = useWorld.getState();
+    if (st.inBattle && st.tool.kind === 'select') return;
     if (st.tool.kind === 'select') return st.set({ selectedId: null });
     if (st.tool.kind !== 'place') return;
     if (!canEditNow()) return st.notify('You do not have edit permission', 'error');
@@ -133,11 +137,12 @@ function Scene() {
 
       <Transit routes={routes} objects={objectsMap} sim={sim} highlightStops={tool.kind === 'route' ? tool.stops : []} carsPer100m={quality === 'low' ? 1.5 : 3} />
 
-      {me && <Avatar sessionId="local" name={me.name} color={me.color} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} />}
+      <BattleScene />
+      {me && <Avatar sessionId="local" name={me.name} color={me.color} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} armed={!!battle[me.id]} />}
       {Object.values(players)
         .filter((p) => p.id !== self?.sessionId)
         .map((p) => (
-          <Avatar key={p.id} sessionId={p.id} name={p.name} color={p.color} speaking={speaking.has(p.userId)} showLabel lite={quality === 'low'} />
+          <Avatar key={p.id} sessionId={p.id} name={p.name} color={p.color} speaking={speaking.has(p.userId)} showLabel lite={quality === 'low'} armed={!!battle[p.id]} hp={battle[p.id]?.hp} />
         ))}
     </>
   );

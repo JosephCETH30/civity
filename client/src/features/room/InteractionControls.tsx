@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { availableAction, interact, jump, wave } from '../../engine/core/interactions';
+import { BattleToggle } from '../battle/BattleHud';
 
 /** Label of what the player can do right now, polled (cheap) instead of re-rendering every frame. */
 function useAvailableAction() {
@@ -34,6 +35,7 @@ export function TouchActions() {
       {label && (
         <button onClick={interact} className="pointer-events-auto rounded-full bg-white px-4 py-3 text-sm font-medium text-stone-900 shadow-lg">{label}</button>
       )}
+      <BattleToggle className="pointer-events-auto bg-stone-900/70" />
       <div className="flex gap-3">
         <button onClick={wave} className={btn} aria-label="Wave">Wave</button>
         <button onClick={jump} className={btn} aria-label="Jump">Jump</button>

@@ -17,6 +17,13 @@ const skin = new THREE.MeshLambertMaterial({ color: '#d9a982' });
 const hair = new THREE.MeshLambertMaterial({ color: '#2b2118' });
 const trousers = new THREE.MeshLambertMaterial({ color: '#2f3640' });
 const speakMat = new THREE.MeshBasicMaterial({ color: '#16a34a', transparent: true, opacity: 0.9 });
+// Battle blaster (held forward at chest height) and the health bar shown above fighters.
+const gunGeo = new THREE.BoxGeometry(0.12, 0.16, 0.62);
+const gunMat = new THREE.MeshLambertMaterial({ color: '#1f2328' });
+const gunTipMat = new THREE.MeshBasicMaterial({ color: '#ffd23f', toneMapped: false });
+const tipGeo = new THREE.BoxGeometry(0.13, 0.06, 0.08);
+const hpBack = new THREE.SpriteMaterial({ color: '#111111', opacity: 0.75, transparent: true, depthWrite: false });
+const hpMats = { high: new THREE.SpriteMaterial({ color: '#22c55e', depthWrite: false }), mid: new THREE.SpriteMaterial({ color: '#eab308', depthWrite: false }), low: new THREE.SpriteMaterial({ color: '#ef4444', depthWrite: false }) };
 const _v = new THREE.Vector3();
 const bodyMats = new Map<string, THREE.Material>();
 const bodyMat = (c: string) => {
@@ -51,10 +58,13 @@ interface Props {
   speaking: boolean;
   showLabel: boolean;
   lite: boolean;
+  /** In the PvP battle: holds a blaster; `hp` (0-100) shows a health bar for other players. */
+  armed?: boolean;
+  hp?: number;
 }
 
 /** Remote avatars interpolate toward the last server pose; the local one reads the controller directly. */
-export function Avatar({ sessionId, name, color, speaking, showLabel, lite }: Props) {
+export function Avatar({ sessionId, name, color, speaking, showLabel, lite, armed, hp }: Props) {
   const g = useRef<THREE.Group>(null);
   const legL = useRef<THREE.Mesh>(null);
   const legR = useRef<THREE.Mesh>(null);
@@ -96,6 +106,7 @@ export function Avatar({ sessionId, name, color, speaking, showLabel, lite }: Pr
     if (anim === 'sit') { legX = -1.45; armLX = armRX = -0.35; bodyY = -0.42; }
     else if (anim === 'jump') { legX = 0.45; armLX = armRX = -2.4; }
     else if (anim === 'wave') { armRZ = 2.5 + Math.sin(phase.current) * 0.35; }
+    if (armed && anim !== 'sit' && anim !== 'fall') armRX = -1.45; // aim the blaster forward
     if (legL.current) legL.current.rotation.x = anim === 'sit' ? legX : anim === 'jump' ? -legX : legX;
     if (legR.current) legR.current.rotation.x = anim === 'sit' || anim === 'jump' ? legX : -legX;
     if (legL.current) legL.current.position.y = 0.85 + bodyY;
@@ -132,9 +143,22 @@ export function Avatar({ sessionId, name, color, speaking, showLabel, lite }: Pr
 
   return (
     <group ref={g}>
-      <group ref={pose}>{custom ? <Suspense fallback={procedural}><CustomBody anim={animRef} /></Suspense> : procedural}</group>
+      <group ref={pose}>{custom ? <Suspense fallback={procedural}><CustomBody anim={animRef} /></Suspense> : procedural}
+        {armed && (
+          <group position={[0.36, 1.32, 0.42]}>
+            <mesh geometry={gunGeo} material={gunMat} />
+            <mesh geometry={tipGeo} material={gunTipMat} position={[0, 0.02, 0.33]} />
+          </group>
+        )}
+      </group>
       {speaking && <mesh geometry={ring} material={speakMat} position={[0, 0.04, 0]} />}
       {showLabel && <NameLabel name={name} speaking={speaking} />}
+      {armed && hp !== undefined && showLabel && (
+        <group position={[0, 2.95, 0]}>
+          <sprite material={hpBack} scale={[1.04, 0.14, 1]} raycast={() => null} />
+          <sprite material={hp > 60 ? hpMats.high : hp > 30 ? hpMats.mid : hpMats.low} center={[0, 0.5]} position={[-0.5, 0, 0.001]} scale={[Math.max(0.001, hp / 100), 0.1, 1]} raycast={() => null} />
+        </group>
+      )}
     </group>
   );
 }

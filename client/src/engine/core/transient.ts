@@ -28,5 +28,10 @@ export const input = { x: 0, z: 0, run: false, joyX: 0, joyZ: 0 };
 /** Renderer measurements, updated once per second by the 3D view. */
 export const perf = { fps: 0, calls: 0, tris: 0 };
 
+/** Recent shots to draw as tracers (performance.now() timestamps). */
+export const shots: { o: [number, number, number]; e: [number, number, number]; at: number; hit: boolean }[] = [];
+/** Last time I hit someone (crosshair hit marker) and the last time I was hit (red screen flash). */
+export const battleFx = { hitAt: 0, hurtAt: 0 };
+
 /** Placement ghost position (snapped) for the 3D editor; null if pointer is off the ground. */
 export const ghost = { x: 0, z: 0, visible: false };

@@ -6,7 +6,7 @@ import type { OrbitControls as OrbitImpl } from 'three-stdlib';
 import { INTERIOR_DEPTH } from '@civitas/shared';
 import { localPlayer } from '../core/transient';
 import { playerNow, stepLocalPlayer } from '../core/interactions';
-import type { CameraMode } from '../../stores/world';
+import { useWorld, type CameraMode } from '../../stores/world';
 
 const PRESETS: Record<CameraMode, { dist: number; polar: number; minPolar: number; maxPolar: number; follow: boolean; pan: boolean }> = {
   third: { dist: 10, polar: 1.18, minPolar: 0.3, maxPolar: 1.45, follow: true, pan: false },
@@ -14,6 +14,8 @@ const PRESETS: Record<CameraMode, { dist: number; polar: number; minPolar: numbe
   free: { dist: 50, polar: 0.9, minPolar: 0.05, maxPolar: 1.5, follow: false, pan: true },
   overview: { dist: 0, polar: 0.75, minPolar: 0.2, maxPolar: 1.2, follow: false, pan: true },
 };
+// Battle in Follow view: closer and lower, so the screen centre (crosshair) points where you shoot.
+const BATTLE_THIRD = { ...PRESETS.third, dist: 6.5, polar: 1.42, minPolar: 0.95, maxPolar: 1.62 };
 
 /** One OrbitControls instance (mouse, touch drag, pinch, wheel) configured per camera mode. Also drives the local player. */
 export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSize: number; far: number }) {
@@ -22,6 +24,7 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
   const last = useRef(new THREE.Vector3(localPlayer.x, 0, localPlayer.z));
   const transition = useRef(0);
   const desired = useRef(new THREE.Vector3());
+  const inBattle = useWorld((s) => s.inBattle);
 
   useEffect(() => {
     camera.far = far;
@@ -32,7 +35,7 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
   useEffect(() => {
     const c = controls.current;
     if (!c) return;
-    const p = PRESETS[mode];
+    const p = mode === 'third' && inBattle ? BATTLE_THIRD : PRESETS[mode];
     const target = p.follow ? new THREE.Vector3(localPlayer.x, (localPlayer.inside ? INTERIOR_DEPTH : 0) + 1.5, localPlayer.z) : mode === 'overview' ? new THREE.Vector3(0, 0, 0) : c.target.clone();
     const dist = mode === 'overview' ? worldSize * 0.95 : localPlayer.inside ? 8 : p.dist;
     const az = c.getAzimuthalAngle();
@@ -42,10 +45,10 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
     c.minPolarAngle = p.minPolar;
     c.maxPolarAngle = p.maxPolar;
     c.enablePan = p.pan;
-    c.minDistance = mode === 'third' ? 5 : 8;
+    c.minDistance = mode === 'third' ? (inBattle ? 3.5 : 5) : 8;
     c.maxDistance = Math.max(60, worldSize * 1.4);
     last.current.set(localPlayer.x, localPlayer.inside ? INTERIOR_DEPTH : 0, localPlayer.z);
-  }, [mode, worldSize]);
+  }, [mode, worldSize, inBattle]);
 
   // Chase camera (GTA-style): while you walk in Follow mode the camera swings round behind the character.
   // Dragging the camera takes over; the chase resumes shortly after you let go.

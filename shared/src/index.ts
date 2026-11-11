@@ -1,7 +1,11 @@
 // Shared contract between client and server: domain types, validation schemas, wire protocol.
 import { z } from 'zod';
 import type { LudoState } from './ludo';
+import { QUIZ_CATEGORIES, QUIZ_LIMITS, type QuizState } from './quiz';
+import type { BattleStats } from './battle';
 export * from './ludo';
+export * from './quiz';
+export * from './battle';
 
 // ---------- Roles & permissions ----------
 export const ROLES = ['owner', 'editor', 'participant', 'viewer'] as const;
@@ -248,6 +252,19 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     seat: z.number().int().min(0).max(3).optional(),
     token: z.number().int().min(0).max(3).optional(),
   }),
+  // General-knowledge quiz at a tree.
+  z.object({
+    t: z.literal('quiz'),
+    treeId: z.uuid(),
+    action: z.enum(['watch', 'unwatch', 'join', 'leave', 'config', 'start', 'answer']),
+    count: z.number().int().min(QUIZ_LIMITS.minCount).max(QUIZ_LIMITS.maxCount).optional(),
+    seconds: z.number().int().min(QUIZ_LIMITS.minSeconds).max(QUIZ_LIMITS.maxSeconds).optional(),
+    category: z.enum(QUIZ_CATEGORIES).optional(),
+    choice: z.number().int().min(0).max(3).optional(),
+  }),
+  // PvP battle: join/leave, and a shot from the player's chest in a direction (unit vector).
+  z.object({ t: z.literal('battle'), action: z.enum(['join', 'leave']) }),
+  z.object({ t: z.literal('shoot'), o: z.tuple([finite, finite, finite]), d: z.tuple([finite, finite, finite]) }),
 ]);
 export type ClientMessage = z.input<typeof clientMessageSchema>;
 
@@ -277,6 +294,12 @@ export type ServerMessage =
   | { t: 'sim'; sim: SimState; serverNow: number }
   | { t: 'pong'; n: number; serverNow: number }
   | { t: 'ludo'; state: LudoState; dice?: number }
+  | { t: 'quiz'; state: QuizState }
+  /** Full battle roster (session id -> stats); sent when someone joins, leaves, dies or respawns. */
+  | { t: 'battle'; stats: Record<string, BattleStats> }
+  /** A shot for everyone to draw. `hit` is the session that was hit; `respawn` tells the victim where to reappear. */
+  | { t: 'shot'; from: string; o: [number, number, number]; e: [number, number, number]; hit?: string; hp?: number; kill?: boolean; head?: boolean }
+  | { t: 'respawn'; id: string; p: [number, number, number] }
   | { t: 'error'; message: string; fatal?: boolean };
 
 // ---------- AI commands (LLM output is validated against this; never executed as code) ----------

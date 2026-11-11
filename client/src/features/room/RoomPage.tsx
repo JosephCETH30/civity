@@ -21,6 +21,7 @@ import { useMedia } from '../communication/mediaStore';
 import { InteractionPrompt, TouchActions } from './InteractionControls';
 import { PhotoStudio } from '../art/PhotoStudio';
 import { Minimap } from './Minimap';
+import { BattleHud, BattleToggle } from '../battle/BattleHud';
 import { AssetRail } from '../city-editor/EditorPanels';
 import { LudoPanel } from '../games/LudoPanel';
 
@@ -173,6 +174,7 @@ function RoomShell() {
         <PresentationPanel />
         {!panel && <div className="pointer-events-none absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-4"><Joystick /></div>}
         {!panel && renderMode === '3d' && <TouchActions />}
+        {renderMode === '3d' && <BattleHud mobile />}
         <PhotoStudio />
         <LudoPanel />
         <Toast bottom />
@@ -259,6 +261,7 @@ function RoomShell() {
           {panel === 'settings' && <Floating title="Settings" onClose={() => setPanel(null)} className="bottom-20 right-3 max-h-[75%] w-80"><SettingsPanel /></Floating>}
           {isTouchDevice() && <div className="pointer-events-none absolute bottom-24 left-4 z-10"><Joystick /></div>}
           {renderMode === '3d' && <InteractionPrompt />}
+          {renderMode === '3d' && <BattleHud />}
           <PhotoStudio />
           <LudoPanel />
           <Toast />
@@ -271,6 +274,7 @@ function RoomShell() {
               <ToolButton name="settings" label="Settings" active={panel === 'settings'} onClick={() => toggle('settings')} />
               <span className="mx-1.5 h-5 w-px shrink-0 bg-white/15" />
               <CameraSwitch />
+              {renderMode === '3d' && <BattleToggle />}
               <span className="mx-1.5 h-5 w-px shrink-0 bg-white/15" />
               <ToolButton name="leave" label="Leave" danger onClick={leave} />
             </div>

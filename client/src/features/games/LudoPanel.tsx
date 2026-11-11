@@ -6,6 +6,7 @@ import {
 import { useWorld } from '../../stores/world';
 import { realtime } from '../../services/realtime';
 import { Button } from '../../components/ui';
+import { QuizPanel } from './QuizPanel';
 import { cn } from '@/lib/utils';
 
 const FILL: Record<string, string> = { red: '#d64545', green: '#3a9a5b', yellow: '#e0ac2b', blue: '#3b77c9' };
@@ -17,6 +18,7 @@ export function LudoPanel() {
   const state = useWorld((s) => (s.ludoTree ? s.ludo[s.ludoTree] : undefined));
   const dice = useWorld((s) => (s.ludoDice && s.ludoDice.treeId === s.ludoTree ? s.ludoDice : null));
   const sessionId = useWorld((s) => s.self?.sessionId);
+  const game = useWorld((s) => s.treeGame);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -36,15 +38,22 @@ export function LudoPanel() {
   const secondsLeft = state && state.phase === 'playing' ? Math.max(0, Math.ceil((state.turnDeadline - now - useWorld.getState().serverOffset) / 1000)) : 0;
 
   return (
-    <div className="absolute inset-0 z-30 grid place-items-center bg-stone-950/40 p-3" role="dialog" aria-label="Ludo table">
+    <div className="absolute inset-0 z-30 grid place-items-center bg-stone-950/40 p-3" role="dialog" aria-label="Tree games">
       <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[10px] border bg-card text-foreground shadow-lg">
         <div className="flex items-center justify-between border-b px-4 py-3">
-          <div>
-            <h2 className="text-sm font-medium">Ludo at this tree</h2>
-            <p className="text-xs text-muted-foreground">2 to 4 players. Each tree is its own table; anyone nearby can watch.</p>
+          <div className="min-w-0">
+            <h2 className="text-sm font-medium">{game === 'quiz' ? 'Kuis di pohon ini' : 'Ludo at this tree'}</h2>
+            <p className="text-xs text-muted-foreground">{game === 'quiz' ? 'Pengetahuan umum, sampai 12 pemain. Tiap pohon punya sesi sendiri.' : '2 to 4 players. Each tree is its own table; anyone nearby can watch.'}</p>
           </div>
-          <button onClick={close} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close Ludo">✕</button>
+          <div className="ml-auto mr-2 flex rounded-md bg-muted p-0.5" role="tablist" aria-label="Game">
+            {([['quiz', 'Kuis'], ['ludo', 'Ludo']] as const).map(([g, label]) => (
+              <button key={g} role="tab" aria-selected={game === g} onClick={() => useWorld.getState().set({ treeGame: g })}
+                className={cn('whitespace-nowrap rounded-[5px] px-3 py-1 text-xs font-medium', game === g ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{label}</button>
+            ))}
+          </div>
+          <button onClick={close} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close tree games">✕</button>
         </div>
+        {game === 'quiz' ? <div className="min-h-0 flex-1 overflow-y-auto p-4"><QuizPanel treeId={treeId} /></div> : (
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[1fr_220px]">
           <div className="mx-auto w-full max-w-[520px]">
             {state ? <Board state={state} mySeat={mySeat} myTurn={myTurn} onToken={(token) => send('move', { token })} /> : <p className="py-20 text-center text-sm text-muted-foreground">Loading table</p>}
@@ -92,6 +101,7 @@ export function LudoPanel() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

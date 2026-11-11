@@ -1,8 +1,9 @@
 // WebSocket client for the authoritative room server: reconnection, outbox for edits made while offline,
 // 10 Hz movement uplink, and routing server messages into the world store / transient maps.
-import type { ClientMessage, PlayerState, ServerMessage } from '@civitas/shared';
+import { BATTLE, type ClientMessage, type PlayerState, type ServerMessage } from '@civitas/shared';
 import { useWorld } from '../stores/world';
-import { localPlayer, remoteRendered, remoteTargets } from '../engine/core/transient';
+import { battleFx, localPlayer, remoteRendered, remoteTargets, shots } from '../engine/core/transient';
+import { playerNow } from '../engine/core/interactions';
 import { tokenStore } from './api';
 
 const SEND_HZ = 10;
@@ -179,6 +180,41 @@ class RealtimeClient {
           ludo: { ...st.ludo, [m.state.treeId]: m.state },
           ...(m.dice ? { ludoDice: { treeId: m.state.treeId, value: m.dice, at: Date.now() } } : {}),
         });
+        break;
+      case 'quiz':
+        st.set({ quiz: { ...st.quiz, [m.state.treeId]: m.state } });
+        break;
+      case 'battle': {
+        const me = st.self?.sessionId;
+        st.set({ battle: m.stats, inBattle: !!me && !!m.stats[me] });
+        break;
+      }
+      case 'shot': {
+        const me = st.self?.sessionId;
+        shots.push({ o: m.o, e: m.e, at: performance.now(), hit: !!m.hit });
+        if (shots.length > 40) shots.splice(0, shots.length - 40);
+        if (m.hit && m.from === me) battleFx.hitAt = performance.now();
+        if (m.hit && m.hit === me) {
+          battleFx.hurtAt = performance.now();
+          localPlayer.hitAt = playerNow();
+          if (m.kill) {
+            Object.assign(localPlayer, { fallUntil: playerNow() + BATTLE.respawnMs, seat: null, moved: true });
+          }
+        }
+        if (m.kill && m.hit) {
+          const name = (id: string) => st.players[id]?.name ?? 'Someone';
+          const text = `${name(m.from)} ${m.head ? 'headshot' : 'eliminated'} ${name(m.hit)}`;
+          const id = Date.now() + Math.random();
+          st.set({ killFeed: [...st.killFeed.slice(-4), { id, text }] });
+          setTimeout(() => useWorld.getState().set({ killFeed: useWorld.getState().killFeed.filter((k) => k.id !== id) }), 6000);
+        }
+        break;
+      }
+      case 'respawn':
+        if (m.id === st.self?.sessionId) {
+          Object.assign(localPlayer, { x: m.p[0], y: 0, z: m.p[2], vy: 0, fallUntil: 0, kx: 0, kz: 0, inside: null, seat: null, moved: true });
+          st.set({ inside: null });
+        }
         break;
       case 'pong':
         break;

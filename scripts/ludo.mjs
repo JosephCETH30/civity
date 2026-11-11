@@ -35,9 +35,10 @@ try {
   await A.getByRole('button', { name: 'Done' }).click();
   for (const P of [A, B]) {
     await P.locator('main canvas').first().click({ position: { x: 5, y: 5 } });
-    await P.locator('button:has(kbd)').filter({ hasText: 'Play Ludo at this tree' }).waitFor({ timeout: 8000 });
+    await P.locator('button:has(kbd)').filter({ hasText: 'Play at this tree' }).waitFor({ timeout: 8000 });
     await P.keyboard.press('KeyE');
-    await P.getByRole('dialog', { name: 'Ludo table' }).waitFor();
+    await P.getByRole('dialog', { name: 'Tree games' }).waitFor();
+    await P.getByRole('tab', { name: 'Ludo' }).click();
   }
   step('both players opened the same tree table');
   await A.getByRole('listitem').filter({ hasText: 'Red seat' }).getByRole('button', { name: 'Sit' }).click();

@@ -6,12 +6,14 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import {
   canEdit, canTalk, clientMessageSchema, INTERIOR_DEPTH, OBJECT_INFO,
   applyMove, applyRoll, legalTokens, newLudo, removePlayer, startGame, type LudoState, normalizeSpec, objectSpecSchema, simElapsed, simHour,
-  type ChatMessage, type CityObject, type CityRoute, type ObjectSpec, type PlayerState, type Role,
+  type ChatMessage, type ClientMessage, type CityObject, type CityRoute, type ObjectSpec, type PlayerState, type Role,
   type RoomSummary, type ServerMessage, type SimState,
 } from '@civitas/shared';
 import { verifyToken, type Identity } from './auth.ts';
 import { q, pool } from './db.ts';
 import { getRoom, logActivity, resolveAccess } from './rooms.ts';
+import { QuizTable } from './quiz.ts';
+import { Battle } from './battle.ts';
 
 const TICK_MS = 100; // 10 Hz position broadcast
 const MAX_OBJECTS = 3000;
@@ -88,6 +90,10 @@ export class CityRoom {
   sim: SimState = defaultSim();
   /** One Ludo table per tree (tree object id -> game). Transient: not saved. */
   ludo = new Map<string, { state: LudoState; watchers: Set<string>; timer?: NodeJS.Timeout }>();
+  /** One quiz per tree (tree object id -> table). Transient. */
+  quiz = new Map<string, QuizTable>();
+  /** PvP battle: whoever opted in. Transient. */
+  battle = new Battle((m) => this.broadcast(m), () => safeSpawn([...this.objects.values()], this.meta.worldSize));
   private tick?: NodeJS.Timeout;
   emptySince = Date.now();
 
@@ -113,6 +119,8 @@ export class CityRoom {
   dispose() {
     clearInterval(this.tick);
     for (const g of this.ludo.values()) clearTimeout(g.timer);
+    for (const t of this.quiz.values()) t.dispose();
+    this.battle.dispose();
   }
 
   get online() {
@@ -176,6 +184,12 @@ export class CityRoom {
       if (seat >= 0) { removePlayer(g.state, seat, Date.now()); this.sendLudo(g); this.scheduleLudo(g); }
       if (!g.watchers.size && g.state.seats.every((p) => !p)) { clearTimeout(g.timer); this.ludo.delete(treeId); }
     }
+    for (const [treeId, t] of this.quiz) {
+      t.watchers.delete(s.id);
+      if (t.leave(s.id)) this.sendQuiz(t);
+      if (t.empty) { t.dispose(); this.quiz.delete(treeId); }
+    }
+    this.battle.leave(s.id);
     this.broadcast({ t: 'player_leave', id: s.id });
     if (!this.sessions.size) this.emptySince = Date.now();
     if (![...this.sessions.values()].some((x) => x.player.userId === s.player.userId)) {
@@ -264,11 +278,62 @@ export class CityRoom {
       }
       case 'ludo':
         return this.onLudo(s, m.treeId, m.action, m.seat, m.token);
+      case 'quiz':
+        return this.onQuiz(s, m);
+      case 'battle':
+        if (m.action === 'join') {
+          this.battle.join(s.id);
+          this.send(s, this.battle.roster());
+        } else this.battle.leave(s.id);
+        return;
+      case 'shoot': {
+        const players = [...this.sessions.values()].map((x) => ({ id: x.id, name: x.player.name, p: x.player.p }));
+        this.battle.shoot({ id: s.id, name: s.player.name, p: s.player.p }, m.o, m.d, players, this.objects.values(), Date.now());
+        return;
+      }
       case 'sim':
         if (role === 'viewer') throw new WorldError('Viewers cannot control the simulation');
         await this.updateSim(m.patch);
         return;
     }
+  }
+
+  // ---------- Quiz ----------
+  private sendQuiz(t: QuizTable) {
+    const data = JSON.stringify({ t: 'quiz', state: t.view() } satisfies ServerMessage);
+    const to = new Set(t.watchers);
+    for (const p of t.players) to.add(p.sessionId);
+    for (const id of to) {
+      const x = this.sessions.get(id);
+      if (x && x.ws.readyState === x.ws.OPEN) x.ws.send(data);
+    }
+  }
+
+  private onQuiz(s: Session, m: Extract<ClientMessage, { t: 'quiz' }>) {
+    const tree = this.objects.get(m.treeId);
+    if (!tree || tree.type !== 'tree') throw new WorldError('Quiz tables are at trees');
+    let t = this.quiz.get(m.treeId);
+    if (!t) {
+      const table: QuizTable = new QuizTable(m.treeId, () => this.sendQuiz(table), (msg) => { throw new WorldError(msg); });
+      this.quiz.set(m.treeId, (t = table));
+    }
+    const now = Date.now();
+    switch (m.action) {
+      case 'watch': t.watchers.add(s.id); break;
+      case 'unwatch':
+        t.watchers.delete(s.id);
+        if (t.empty) { t.dispose(); this.quiz.delete(m.treeId); }
+        return;
+      case 'join': t.join({ id: s.id, userId: s.player.userId, name: s.player.name }); break;
+      case 'leave': if (!t.leave(s.id)) return; break;
+      case 'config': t.config(s.id, { count: m.count, seconds: m.seconds, category: m.category }); break;
+      case 'start': t.start(s.id, now); break;
+      case 'answer':
+        if (m.choice === undefined) throw new WorldError('Pick an answer');
+        t.answer(s.id, m.choice, now);
+        break;
+    }
+    this.sendQuiz(t);
   }
 
   // ---------- Ludo ----------
@@ -460,6 +525,14 @@ export class CityRoom {
     }
     this.objects.delete(id);
     this.broadcast({ t: 'obj_deleted', id });
+    const quiz = this.quiz.get(id);
+    if (quiz) {
+      quiz.dispose();
+      quiz.phase = 'finished';
+      quiz.event = 'The tree was removed, quiz over';
+      this.sendQuiz(quiz);
+      this.quiz.delete(id);
+    }
     const game = this.ludo.get(id);
     if (game) {
       clearTimeout(game.timer);
