@@ -5,6 +5,7 @@ import {
   type AiCommand, type AiResponse, type CityAnalysis, type CityObject, type CityRoute, type ObjectType,
 } from '@civitas/shared';
 import { config } from './config.ts';
+import { geminiText, groqChat } from './providers.ts';
 import type { CityRoom } from './realtime.ts';
 
 type XZ = { x: number; z: number };
@@ -80,11 +81,10 @@ function adviceFromAnalysis(a: CityAnalysis): string {
   return tips.length ? tips.map((t) => '• ' + t).join('\n') : 'No obvious gaps found by the rule checks. The facility distribution looks balanced.';
 }
 
-async function callGemini(prompt: string, room: CityRoom, origin: XZ, analysis: CityAnalysis): Promise<AiCommand> {
-  const g = config.gemini!;
+function commandSystemPrompt(room: CityRoom, origin: XZ, analysis: CityAnalysis) {
   const stops = [...room.objects.values()].filter((o) => o.type === 'bus_stop').slice(0, 40)
     .map((o) => ({ id: o.id, name: o.props.name ?? 'stop', x: o.position.x, z: o.position.z }));
-  const system = `You convert a user's request about a 3D city into ONE JSON command. Output JSON only.
+  return `You convert a user's request about a 3D city into ONE JSON command. Output JSON only.
 Schema (TypeScript):
 type Obj = { type: ${PLACEABLE_TYPES.map((t) => `"${t}"`).join('|')}; floors?: 1-40 (buildings only); style?: "modern"|"classic"|"industrial"; color?: "#rrggbb"; name?: string; position?: {x:number,z:number}; near?: <same type enum>; rotationY?: radians; scale?: 0.25-4 }
 type Command =
@@ -95,22 +95,27 @@ type Command =
 Rules: Prefer "near" over inventing coordinates. World coordinates range ±${room.meta.worldSize / 2}. The user stands at x=${Math.round(origin.x)}, z=${Math.round(origin.z)}.
 City metrics (verified): ${JSON.stringify(analysis)}
 Bus stops: ${JSON.stringify(stops)}`;
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${g.model}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': g.key },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-  const data: any = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  const parsed = aiCommandSchema.safeParse(JSON.parse(text ?? 'null'));
-  if (!parsed.success) throw new Error('Gemini returned an invalid command');
-  return parsed.data;
+}
+
+/** LLM path for city commands: Groq first (fast, free), Gemini text second. Throws when neither works. */
+async function callModel(prompt: string, room: CityRoom, origin: XZ, analysis: CityAnalysis): Promise<{ command: AiCommand; provider: 'groq' | 'gemini' }> {
+  const system = commandSystemPrompt(room, origin, analysis);
+  const attempts: Array<['groq' | 'gemini', () => Promise<string>]> = [];
+  if (config.groq) attempts.push(['groq', () => groqChat({ system, user: prompt, json: true, temperature: 0.2 })]);
+  if (config.gemini) attempts.push(['gemini', () => geminiText(system, prompt)]);
+  let lastError: unknown = new Error('no AI provider configured');
+  for (const [provider, run] of attempts) {
+    try {
+      const text = await run();
+      const parsed = aiCommandSchema.safeParse(JSON.parse(text || 'null'));
+      if (!parsed.success) throw new Error(`${provider} returned an invalid command`);
+      return { command: parsed.data, provider };
+    } catch (e) {
+      lastError = e;
+      console.warn(`[ai] ${provider} failed:`, (e as Error).message);
+    }
+  }
+  throw lastError;
 }
 
 const footprintRadius = (t: ObjectType) => Math.max(...OBJECT_INFO[t].footprint) / 2;
@@ -146,12 +151,10 @@ export async function runAiCommand(room: CityRoom, prompt: string, origin: XZ, a
   let provider: AiResponse['provider'] = 'offline';
   let note = '';
   let command: AiCommand;
-  if (config.gemini) {
+  if (config.groq || config.gemini) {
     try {
-      command = await callGemini(prompt, room, origin, analysis);
-      provider = 'gemini';
-    } catch (e) {
-      console.warn('[ai] gemini failed, using offline parser:', (e as Error).message);
+      ({ command, provider } = await callModel(prompt, room, origin, analysis));
+    } catch {
       note = ' (AI provider unavailable, used the built-in offline parser)';
       command = parseOffline(prompt);
     }

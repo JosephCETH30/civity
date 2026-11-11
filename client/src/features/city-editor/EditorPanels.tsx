@@ -45,6 +45,28 @@ export function AssetLibrary({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/** Icon-only asset buttons for the minimised sidebar. Same behaviour as AssetLibrary. */
+export function AssetRail() {
+  const tool = useWorld((s) => s.tool);
+  const set = useWorld((s) => s.set);
+  const canEdit = useCanEdit();
+  if (!canEdit) return null;
+  return (
+    <>
+      {PLACEABLE_TYPES.map((t) => {
+        const active = tool.kind === 'place' && tool.type === t;
+        return (
+          <button key={t} title={OBJECT_INFO[t].label} aria-label={`Place ${OBJECT_INFO[t].label}`} aria-pressed={active}
+            onClick={() => set({ tool: active ? { kind: 'select' } : { kind: 'place', type: t }, selectedId: null })}
+            className={cn('grid h-9 w-9 place-items-center rounded-md', active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>
+            <AssetIcon type={t} className="h-5 w-5" />
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
 /** City objects grouped by type. Selecting an item selects it in the scene. */
 export function Hierarchy() {
   const objects = useWorld((s) => s.objects);

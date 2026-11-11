@@ -138,3 +138,19 @@ create table if not exists artworks (
   created_at timestamptz not null default now()
 );
 create index if not exists artworks_room_idx on artworks(room_id);
+
+-- Fountain studio: AI-transformed photos (age / era / restyle), kept per room for the gallery and the report.
+create table if not exists studio_images (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references rooms(id) on delete cascade,
+  user_id uuid references users(id) on delete set null,
+  kind text not null check (kind in ('age', 'era', 'restyle')),
+  params jsonb not null default '{}',
+  instruction text not null,
+  source bytea not null,
+  source_mime text not null,
+  result bytea not null,
+  result_mime text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists studio_images_room_idx on studio_images(room_id, created_at desc);

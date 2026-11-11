@@ -15,6 +15,8 @@ import { createRoomWithTemplate, getRoom, logActivity, resolveAccess, ROOM_SELEC
 import type { RoomManager } from './realtime.ts';
 import { WorldError } from './realtime.ts';
 import { runAiCommand } from './ai.ts';
+import { providers, ProviderError } from './providers.ts';
+import { analysePhoto, renderEdit } from './studio.ts';
 
 const authLimit = rateLimiter(20, 60_000);
 const aiLimit = rateLimiter(10, 60_000);
@@ -53,7 +55,7 @@ export function createApp(manager: RoomManager) {
   // (Neon free tier) would never sleep and burn its compute quota. Use ?db=1 to check the database too.
   api.get('/health', async (req, res) => {
     if (req.query.db) await q('select 1');
-    res.json({ ok: true, livekit: !!config.livekit, ai: config.gemini ? 'gemini' : 'offline' });
+    res.json({ ok: true, livekit: !!config.livekit, ai: providers() });
   });
 
   // ---------- Identity ----------
@@ -202,6 +204,83 @@ export function createApp(manager: RoomManager) {
     if (!a) return bad(res, 404, 'Not found');
     res.set({ 'content-type': a.mime, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' });
     res.send(a.data);
+  });
+
+  // ---------- Fountain studio: realistic AI photo transformations ----------
+  const studioLimit = rateLimiter(6, 60_000);
+  const studioAccess = async (req: Request, res: Response, edit = false) => {
+    const room = await getRoom(String(req.params.id));
+    if (!room) return bad(res, 404, 'Room not found'), null;
+    const access = await resolveAccess(room, req.identity, false);
+    if (!access.ok) return bad(res, access.status, access.error), null;
+    // Creating spends paid AI calls, so only owners and editors may; everyone in the room can see the gallery.
+    if (edit && access.role !== 'owner' && access.role !== 'editor') return bad(res, 403, 'You need edit permission to use the studio'), null;
+    return room;
+  };
+  const studioBody = z.object({
+    image: z.string().max(2_000_000),
+    kind: z.enum(['age', 'era', 'restyle']),
+    params: z.object({ age: z.number().int().min(1).max(100).optional(), year: z.number().int().min(1800).max(2200).optional(), style: z.string().trim().min(3).max(200).optional() }).default({}),
+  });
+  const paramsOk = (kind: string, p: { age?: number; year?: number; style?: string }) =>
+    (kind === 'age' && p.age !== undefined) || (kind === 'era' && p.year !== undefined) || (kind === 'restyle' && !!p.style);
+
+  api.get('/studio/capabilities', (_req, res) => res.json(providers()));
+
+  // Stage 1: a vision model describes the photo and writes the edit instruction (shown to the user, editable).
+  api.post('/rooms/:id/studio/analyse', requireUser, async (req, res) => {
+    if (!(await studioAccess(req, res, true))) return;
+    if (!studioLimit(req.identity!.sub)) return bad(res, 429, 'Studio limit reached (6 per minute). Try again shortly.');
+    const body = parse(studioBody, req.body, res);
+    if (!body) return;
+    if (!paramsOk(body.kind, body.params)) return bad(res, 400, 'Missing parameter for this transformation');
+    const image = imageOf(body.image, 1_500_000, ['image/jpeg', 'image/png', 'image/webp']);
+    if (!image) return bad(res, 400, 'Photo must be a JPEG, PNG or WebP under 1.5 MB');
+    try {
+      res.json(await analysePhoto(body.kind, body.params, { mime: image.mime, base64: image.buf.toString('base64') }));
+    } catch (e) {
+      if (e instanceof ProviderError) return bad(res, 502, e.message);
+      throw e;
+    }
+  });
+
+  // Stage 2: the image model applies the instruction; the result is stored for the room gallery.
+  api.post('/rooms/:id/studio/render', requireUser, async (req, res) => {
+    const room = await studioAccess(req, res, true);
+    if (!room) return;
+    if (!studioLimit(req.identity!.sub)) return bad(res, 429, 'Studio limit reached (6 per minute). Try again shortly.');
+    const body = parse(studioBody.extend({ instruction: z.string().trim().min(10).max(1500) }), req.body, res);
+    if (!body) return;
+    const image = imageOf(body.image, 1_500_000, ['image/jpeg', 'image/png', 'image/webp']);
+    if (!image) return bad(res, 400, 'Photo must be a JPEG, PNG or WebP under 1.5 MB');
+    try {
+      const out = await renderEdit(body.instruction, { mime: image.mime, base64: image.buf.toString('base64') });
+      const result = Buffer.from(out.base64, 'base64');
+      const [row] = await q(
+        'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id, created_at',
+        [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime],
+      );
+      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at });
+    } catch (e) {
+      if (e instanceof ProviderError) return bad(res, e.status === 429 ? 429 : 502, e.message);
+      throw e;
+    }
+  });
+
+  api.get('/rooms/:id/studio', requireUser, async (req, res) => {
+    const room = await studioAccess(req, res);
+    if (!room) return;
+    res.json(await q(
+      `select s.id, s.kind, s.params, s.instruction, s.created_at as "createdAt", p.display_name as "author"
+       from studio_images s left join profiles p on p.id = s.user_id where s.room_id = $1 order by s.created_at desc limit 60`, [room.id]));
+  });
+  api.get('/studio/:id/:which', async (req, res) => {
+    const { id, which } = req.params;
+    if (!/^[0-9a-f-]{36}$/i.test(id) || (which !== 'source' && which !== 'result')) return bad(res, 404, 'Not found');
+    const [row] = await q(`select ${which} as data, ${which}_mime as mime from studio_images where id = $1`, [id]);
+    if (!row) return bad(res, 404, 'Not found');
+    res.set({ 'content-type': row.mime, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' });
+    res.send(row.data);
   });
 
   api.get('/avatars/:id', async (req, res) => {

@@ -303,7 +303,7 @@ export const aiRequestSchema = z.object({
   origin: z.object({ x: finite, z: finite }).optional(),
 });
 export interface AiResponse {
-  provider: 'gemini' | 'offline';
+  provider: 'groq' | 'gemini' | 'offline';
   command: AiCommand;
   /** Human-readable confirmation of what was executed. */
   summary: string;

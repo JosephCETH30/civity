@@ -37,17 +37,28 @@ try {
   await A.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await A.getByRole('button', { name: 'Done' }).click();
   await A.locator('main canvas').first().click({ position: { x: 5, y: 5 } });
-  await A.locator('button:has(kbd)').filter({ hasText: 'Make 3D art from a photo' }).waitFor({ timeout: 8000 });
+  await A.locator('button:has(kbd)').filter({ hasText: 'Open the fountain studio' }).waitFor({ timeout: 8000 });
   step('park placed; studio prompt shown inside the park');
   await A.keyboard.press('KeyE');
-  await A.getByRole('dialog', { name: 'Photo to 3D studio' }).waitFor();
+  await A.getByRole('dialog', { name: 'Fountain studio' }).waitFor();
+  // Realistic AI mode (default): era change with a vision-written instruction.
+  await A.getByRole('tab', { name: 'Era change' }).click();
+  await A.getByRole('button', { name: '1960' }).click();
+  await A.getByLabel('Photo file').setInputFiles(PHOTO);
+  await A.getByRole('button', { name: '1. Analyse photo' }).click();
+  await A.getByText('Edit instruction').waitFor({ timeout: 60000 });
+  const instruction = await A.locator('textarea').inputValue();
+  if (instruction.length < 20) throw new Error('no instruction written');
+  step(`realism: photo analysed, instruction (${instruction.length} chars) shown`);
+  await A.screenshot({ path: OUT + 'realism-studio.png' });
+  await A.getByRole('tab', { name: 'Photo → 3D' }).click();
   await A.getByLabel('Photo file').setInputFiles(PHOTO);
   await A.getByText('AI depth map').waitFor({ timeout: 240000 });
   step('AI depth estimated in the browser, 3D preview shown');
   await A.waitForTimeout(2500);
   await A.screenshot({ path: OUT + 'art-studio.png' });
   await A.getByRole('button', { name: 'Place in this park' }).click();
-  await A.getByRole('dialog', { name: 'Photo to 3D studio' }).waitFor({ state: 'detached' });
+  await A.getByRole('dialog', { name: 'Fountain studio' }).waitFor({ state: 'detached' });
   const count = async (p) => {
     const btn = p.locator('section:has(h2:text-is("City hierarchy")) button').filter({ hasText: /^Photo sculpture/ });
     return (await btn.count()) ? Number((await btn.first().innerText()).replace(/\D+/g, '')) : 0;

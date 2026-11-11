@@ -85,11 +85,11 @@ function Result({ r }: { r: AiResponse }) {
       )}
       <div>
         {r.command.action === 'advice' && (
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">{r.provider === 'gemini' ? 'AI suggestion (not verified)' : 'Rule-based suggestions'}</p>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">{r.provider !== 'offline' ? 'AI suggestion (not verified)' : 'Rule-based suggestions'}</p>
         )}
         <p className="whitespace-pre-line text-sm">{r.summary}</p>
       </div>
-      <p className="text-[11px] text-muted-foreground">{r.provider === 'gemini' ? 'Gemini' : 'Offline parser'}</p>
+      <p className="text-[11px] text-muted-foreground">{r.provider === 'groq' ? 'Groq' : r.provider === 'gemini' ? 'Gemini' : 'Offline parser'}</p>
     </div>
   );
 }

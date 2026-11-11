@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type Reac
 import { Link, useNavigate, useParams } from 'react-router';
 import gsap from 'gsap';
 import { OBJECT_INFO, TEMPLATE_LABELS, type RoomSummary } from '@civitas/shared';
-import { useWorld } from '../../stores/world';
+import { loadPref, savePref, useWorld } from '../../stores/world';
 import { api, ApiError, tokenStore } from '../../services/api';
 import { realtime } from '../../services/realtime';
 import { media } from '../../services/livekit/media';
@@ -20,6 +20,8 @@ import { CameraSwitch, SettingsPanel } from './SettingsPanel';
 import { useMedia } from '../communication/mediaStore';
 import { InteractionPrompt, TouchActions } from './InteractionControls';
 import { PhotoStudio } from '../art/PhotoStudio';
+import { Minimap } from './Minimap';
+import { AssetRail } from '../city-editor/EditorPanels';
 import { LudoPanel } from '../games/LudoPanel';
 
 const loadCanvas = () => import('../../engine/scenes/CityCanvas');
@@ -118,7 +120,11 @@ function RoomShell() {
   const mobile = useIsMobile();
   const nav = useNavigate();
   const [panel, setPanel] = useState<Sheet>(null);
-  const [leftOpen, setLeftOpen] = useState(true);
+  // Sidebars: 'open' is the full panel, 'mini' is a narrow icon rail (more room for the city), 'hidden' is gone.
+  const [left, setLeft] = useState<'open' | 'mini' | 'hidden'>(() => loadPref<'open' | 'mini' | 'hidden'>('sidebar.left', 'open'));
+  const [rightMini, setRightMini] = useState<boolean>(() => loadPref('sidebar.rightMini', false));
+  const setLeftMode = (m: 'open' | 'mini' | 'hidden') => { setLeft(m); savePref('sidebar.left', m); };
+  const setRightMiniMode = (v: boolean) => { setRightMini(v); savePref('sidebar.rightMini', v); };
   const [rightTab, setRightTab] = useState<'inspect' | 'ai' | 'sim' | 'routes'>('inspect');
 
   // Presence: tell others what we're doing.
@@ -163,6 +169,7 @@ function RoomShell() {
           <button className="pointer-events-auto rounded-md bg-red-600 px-3 py-2 text-xs font-medium text-white" onClick={leave}>Leave</button>
         </div>
         <div className="pointer-events-none absolute right-2 top-16"><VideoPanel /></div>
+        {renderMode === '3d' && <div className="pointer-events-none absolute left-2 top-16 z-10 origin-top-left scale-[0.72]"><Minimap /></div>}
         <PresentationPanel />
         {!panel && <div className="pointer-events-none absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-4"><Joystick /></div>}
         {!panel && renderMode === '3d' && <TouchActions />}
@@ -212,10 +219,15 @@ function RoomShell() {
       </header>
 
       <div className="relative flex min-h-0 flex-1">
-        {leftOpen && (
+        {left === 'open' && (
           <aside className="z-10 flex w-[264px] shrink-0 flex-col border-r bg-card" aria-label="City editor">
             <section className="border-b p-3">
-              <SidebarTitle title="Asset library" action={<button onClick={() => setLeftOpen(false)} className="rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Hide editor sidebar">Hide</button>} />
+              <SidebarTitle title="Asset library" action={
+                <span className="flex gap-1">
+                  <button onClick={() => setLeftMode('mini')} className="rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Minimise editor sidebar" title="Minimise">⟨</button>
+                  <button onClick={() => setLeftMode('hidden')} className="rounded px-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Hide editor sidebar">Hide</button>
+                </span>
+              } />
               <AssetLibrary />
             </section>
             <section className="flex min-h-0 flex-1 flex-col p-3 pb-0">
@@ -224,11 +236,18 @@ function RoomShell() {
             </section>
           </aside>
         )}
+        {left === 'mini' && (
+          <aside className="z-10 flex w-14 shrink-0 flex-col items-center gap-1 border-r bg-card py-2" aria-label="City editor (minimised)">
+            <button onClick={() => setLeftMode('open')} className="mb-1 grid h-9 w-9 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Expand editor sidebar" title="Expand">⟩</button>
+            <AssetRail />
+          </aside>
+        )}
         <main className="relative min-w-0 flex-1 bg-stone-200">
           {viewport}
-          {!leftOpen && (
-            <button onClick={() => setLeftOpen(true)} className="absolute left-3 top-3 z-10 rounded-md border bg-card px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-muted" aria-label="Show editor sidebar">Build</button>
+          {left === 'hidden' && (
+            <button onClick={() => setLeftMode('open')} className="absolute left-3 top-3 z-10 rounded-md border bg-card px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-muted" aria-label="Show editor sidebar">Build</button>
           )}
+          <div className="pointer-events-none absolute bottom-24 right-3 z-10"><Minimap /></div>
           {tool.kind === 'place' && (
             <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md border bg-card py-1.5 pl-3 pr-1.5 text-xs shadow-sm">
               <span>Placing <b className="font-medium">{OBJECT_INFO[tool.type].label.toLowerCase()}</b>. Click the ground.</span>
@@ -270,9 +289,18 @@ function RoomShell() {
             <div className={`min-h-0 flex-1 px-4 py-4 ${panel === 'people' ? 'overflow-y-auto' : ''}`}>{panel === 'chat' ? <ChatPanel /> : <ParticipantsPanel />}</div>
           </aside>
         ) : (
+        rightMini ? (
+          <aside className="z-10 flex w-14 shrink-0 flex-col items-center gap-1 border-l bg-card py-2" aria-label="Properties and assistant (minimised)">
+            {([['inspect', 'Inspect', 'i'], ['ai', 'AI', 'AI'], ['sim', 'Simulation', '▶'], ['routes', 'Routes', '⟲']] as const).map(([k, label, glyph]) => (
+              <button key={k} onClick={() => { setRightTab(k); setRightMiniMode(false); }} title={label} aria-label={label}
+                className={`grid h-9 w-9 place-items-center rounded-md text-xs font-medium ${rightTab === k ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{glyph}</button>
+            ))}
+          </aside>
+        ) : (
         <aside className="z-10 flex w-80 shrink-0 flex-col border-l bg-card" aria-label="Properties and assistant">
-          <div className="p-3 pb-0">
-            <Segmented value={rightTab} onChange={setRightTab} items={[['inspect', 'Inspect'], ['ai', 'AI'], ['sim', 'Simulation'], ['routes', 'Routes']]} />
+          <div className="flex items-center gap-2 p-3 pb-0">
+            <div className="min-w-0 flex-1"><Segmented value={rightTab} onChange={setRightTab} items={[['inspect', 'Inspect'], ['ai', 'AI'], ['sim', 'Simulation'], ['routes', 'Routes']]} /></div>
+            <button onClick={() => setRightMiniMode(true)} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Minimise side panel" title="Minimise">⟩</button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             {rightTab === 'inspect' && <PropertiesPanel />}
@@ -281,7 +309,7 @@ function RoomShell() {
             {rightTab === 'routes' && <RoutesPanel />}
           </div>
         </aside>
-        )}
+        ))}
       </div>
     </div>
   );

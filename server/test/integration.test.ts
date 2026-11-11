@@ -1,6 +1,7 @@
 // End-to-end server test against a real Postgres (DATABASE_URL, default civitas_test) and real WebSockets.
 process.env.DATABASE_URL ??= 'postgres://localhost:5432/civitas_test';
 process.env.GEMINI_API_KEY = ''; // always exercise the offline parser here
+process.env.GROQ_API_KEY = '';
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -252,6 +253,20 @@ test('a paused room comes back running after everyone left and it was unloaded',
   assert.equal(init.sim.running, true);
   assert.equal(init.sim.weather, 'rain', 'other saved settings are kept');
   back.close();
+});
+
+test('fountain studio: analyse without providers falls back to the brief, render needs Gemini, viewers cannot create', async () => {
+  const jpg = 'data:image/jpeg;base64,' + Buffer.from('ffd8ffe000104a4649460001', 'hex').toString('base64');
+  assert.deepEqual((await api('/studio/capabilities')).json, { text: 'offline', vision: 'none', image: 'none' });
+  const an = await api(`/rooms/${roomId}/studio/analyse`, { token: users[1].token, body: { image: jpg, kind: 'era', params: { year: 1960 } } });
+  assert.equal(an.status, 200, JSON.stringify(an.json));
+  assert.match(an.json.instruction, /1960/);
+  assert.equal((await api(`/rooms/${roomId}/studio/analyse`, { token: users[1].token, body: { image: jpg, kind: 'age', params: {} } })).status, 400);
+  assert.equal((await api(`/rooms/${roomId}/studio/analyse`, { token: users[4].token, body: { image: jpg, kind: 'age', params: { age: 5 } } })).status, 403);
+  const r = await api(`/rooms/${roomId}/studio/render`, { token: users[1].token, body: { image: jpg, kind: 'era', params: { year: 1960 }, instruction: an.json.instruction } });
+  assert.equal(r.status, 502);
+  assert.match(r.json.error, /GEMINI_API_KEY/);
+  assert.deepEqual((await api(`/rooms/${roomId}/studio`, { token: users[4].token })).json, []);
 });
 
 test('photo sculptures: upload photo + depth map, place it, and only real uploads are accepted', async () => {

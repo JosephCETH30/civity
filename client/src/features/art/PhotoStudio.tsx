@@ -12,6 +12,8 @@ import { localPlayer } from '../../engine/core/transient';
 import { estimateDepth, preparePhoto } from '../../engine/ai/depth';
 import { ReliefMesh } from '../../engine/objects/ArtworkReliefs';
 import { Button } from '../../components/ui';
+import { FountainStudio } from './FountainStudio';
+import { cn } from '@/lib/utils';
 
 type Stage =
   | { kind: 'pick' }
@@ -27,6 +29,7 @@ export function PhotoStudio() {
   const [depthScale, setDepthScale] = useState(0.8);
   const [cutout, setCutout] = useState(0);
   const [placing, setPlacing] = useState(false);
+  const [mode, setMode] = useState<'realism' | '3d'>('realism');
   const fileRef = useRef<HTMLInputElement>(null);
   const close = () => useWorld.getState().set({ artStudio: null });
 
@@ -69,17 +72,25 @@ export function PhotoStudio() {
   }
 
   return (
-    <div className="absolute inset-0 z-30 grid place-items-center bg-stone-950/40 p-3" role="dialog" aria-label="Photo to 3D studio">
-      <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[10px] border bg-card text-foreground shadow-lg">
+    <div className="absolute inset-0 z-30 grid place-items-center bg-stone-950/40 p-3" role="dialog" aria-label="Fountain studio">
+      <div className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-[10px] border bg-card text-foreground shadow-lg">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div>
-            <h2 className="text-sm font-medium">Photo to 3D</h2>
-            <p className="text-xs text-muted-foreground">An AI model estimates the depth of every pixel, then the photo becomes a 3D sculpture in this park.</p>
+            <h2 className="text-sm font-medium">Fountain studio</h2>
+            <p className="text-xs text-muted-foreground">{mode === 'realism' ? 'AI realism: show a person at another age, a place in another era, or a realistic restyle.' : 'An AI model estimates the depth of every pixel, then the photo becomes a 3D sculpture in this park.'}</p>
           </div>
-          <button onClick={close} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close Photo to 3D">✕</button>
+          <div className="ml-auto mr-2 flex rounded-md bg-muted p-0.5" role="tablist" aria-label="Studio mode">
+            {([['realism', 'Realistic AI'], ['3d', 'Photo → 3D']] as const).map(([m, label]) => (
+              <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+                className={cn('whitespace-nowrap rounded-[5px] px-2.5 py-1 text-xs font-medium', mode === m ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{label}</button>
+            ))}
+          </div>
+          <button onClick={close} className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close fountain studio">✕</button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {mode === 'realism' && <FountainStudio onBack={close} />}
+          {mode === '3d' && <>
           {!canEdit && <p className="text-sm text-muted-foreground">You need edit permission in this room to place sculptures. Ask the owner to make you an editor.</p>}
           {canEdit && stage.kind === 'pick' && (
             <div className="grid place-items-center gap-3 rounded-md border border-dashed px-4 py-10 text-center">
@@ -136,6 +147,7 @@ export function PhotoStudio() {
               </div>
             </div>
           )}
+          </>}
         </div>
       </div>
     </div>

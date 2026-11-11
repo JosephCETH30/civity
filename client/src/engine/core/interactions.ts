@@ -111,7 +111,7 @@ export function availableAction(): Action | null {
   for (const pk of parks) {
     const l = toLocal(pk.f, p.x, p.z);
     if (Math.abs(l.lx) <= pk.hw + 1 && Math.abs(l.lz) <= pk.hd + 1) {
-      return { label: 'Make 3D art from a photo', run: () => useWorld.getState().set({ artStudio: pk.o.id }) };
+      return { label: 'Open the fountain studio (AI realism, photo to 3D)', run: () => useWorld.getState().set({ artStudio: pk.o.id }) };
     }
   }
   let best: { o: CityObject; d: number } | null = null;

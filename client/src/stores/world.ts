@@ -6,7 +6,7 @@ export type ConnStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 
 export type CameraMode = 'third' | 'top' | 'free' | 'overview';
 export type Tool = { kind: 'select' } | { kind: 'place'; type: ObjectType } | { kind: 'route'; stops: string[] };
 
-const loadPref = <T,>(k: string, fallback: T): T => {
+export const loadPref = <T,>(k: string, fallback: T): T => {
   try { const v = localStorage.getItem('civitas.' + k); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
 };
 export const savePref = (k: string, v: unknown) => { try { localStorage.setItem('civitas.' + k, JSON.stringify(v)); } catch { /* ignore */ } };
