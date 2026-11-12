@@ -219,11 +219,11 @@ export function createApp(manager: RoomManager) {
   };
   const studioBody = z.object({
     image: z.string().max(2_000_000),
-    kind: z.enum(['age', 'era', 'restyle']),
+    kind: z.enum(['age', 'era', 'restyle', 'custom']),
     params: z.object({ age: z.number().int().min(1).max(100).optional(), year: z.number().int().min(1800).max(2200).optional(), style: z.string().trim().min(3).max(200).optional() }).default({}),
   });
   const paramsOk = (kind: string, p: { age?: number; year?: number; style?: string }) =>
-    (kind === 'age' && p.age !== undefined) || (kind === 'era' && p.year !== undefined) || (kind === 'restyle' && !!p.style);
+    (kind === 'age' && p.age !== undefined) || (kind === 'era' && p.year !== undefined) || ((kind === 'restyle' || kind === 'custom') && !!p.style);
 
   api.get('/studio/capabilities', (_req, res) => res.json(providers()));
 
@@ -249,18 +249,20 @@ export function createApp(manager: RoomManager) {
     const room = await studioAccess(req, res, true);
     if (!room) return;
     if (!studioLimit(req.identity!.sub)) return bad(res, 429, 'Studio limit reached (6 per minute). Try again shortly.');
-    const body = parse(studioBody.extend({ instruction: z.string().trim().min(10).max(1500), description: z.string().max(400).optional() }), req.body, res);
+    const body = parse(studioBody.extend({ instruction: z.string().trim().min(10).max(1500), description: z.string().max(400).optional(), parentId: z.uuid().optional() }), req.body, res);
     if (!body) return;
     const image = imageOf(body.image, 1_500_000, ['image/jpeg', 'image/png', 'image/webp']);
     if (!image) return bad(res, 400, 'Photo must be a JPEG, PNG or WebP under 1.5 MB');
     try {
       const out = await renderEdit(body.kind, body.instruction, { mime: image.mime, base64: image.buf.toString('base64') }, body.description);
       const result = Buffer.from(out.base64, 'base64');
+      // Re-edit of an earlier result: keep the link only when that image belongs to this room.
+      const [parent] = body.parentId ? await q('select id from studio_images where id = $1 and room_id = $2', [body.parentId, room.id]) : [];
       const [row] = await q(
-        'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime) values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id, created_at',
-        [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime],
+        'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime, parent_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id, created_at',
+        [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime, parent?.id ?? null],
       );
-      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at });
+      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at, parentId: parent?.id ?? null, note: out.note });
     } catch (e) {
       if (e instanceof ProviderError) return bad(res, e.status === 429 ? 429 : 502, e.message);
       throw e;
@@ -271,7 +273,7 @@ export function createApp(manager: RoomManager) {
     const room = await studioAccess(req, res);
     if (!room) return;
     res.json(await q(
-      `select s.id, s.kind, s.params, s.instruction, s.created_at as "createdAt", p.display_name as "author"
+      `select s.id, s.kind, s.params, s.instruction, s.created_at as "createdAt", s.parent_id as "parentId", p.display_name as "author"
        from studio_images s left join profiles p on p.id = s.user_id where s.room_id = $1 order by s.created_at desc limit 60`, [room.id]));
   });
   api.get('/studio/:id/:which', async (req, res) => {

@@ -2,6 +2,8 @@
 // Options: Age change (same person at another age), Era change (same place in another year), Realistic restyle
 // (free instruction), plus the earlier 3D relief. A vision model reads the photo and writes the edit instruction,
 // an image model renders it; both run on the server. Results are kept in the room gallery for the report.
+// Any result (yours or someone else's in the room) can be edited again with your own prompt, as many times as you like;
+// each new result remembers the image it came from.
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useWorld } from '../../stores/world';
 import { api } from '../../services/api';
@@ -9,10 +11,10 @@ import { preparePhoto } from '../../engine/ai/depth';
 import { Button } from '../../components/ui';
 import { cn } from '@/lib/utils';
 
-type Kind = 'age' | 'era' | 'restyle';
+type Kind = 'age' | 'era' | 'restyle' | 'custom';
 interface Caps { text: string; vision: string; image: string }
 interface Analysis { description: string; instruction: string; warnings: string[]; provider: string }
-interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string }
+interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string; parentId?: string | null; note?: string }
 
 const AGES = [5, 17, 30, 50, 70];
 const YEARS = [1945, 1960, 1980, 1990, 2040];
@@ -33,21 +35,39 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('');
   const [result, setResult] = useState<Item | null>(null);
   const [gallery, setGallery] = useState<Item[]>([]);
+  const [parentId, setParentId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     api<Caps>('/studio/capabilities').then(setCaps, () => setCaps({ text: 'offline', vision: 'none', image: 'none' }));
     api<Item[]>(`/rooms/${roomId}/studio`).then(setGallery, () => {});
   }, [roomId]);
 
-  const params = kind === 'age' ? { age } : kind === 'era' ? { year } : { style };
+  const params = kind === 'age' ? { age } : kind === 'era' ? { year } : kind === 'restyle' ? { style } : { style: instruction.trim().slice(0, 200) || 'custom edit' };
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setError(''); setAnalysis(null); setResult(null); setInstruction('');
+    setError(''); setAnalysis(null); setResult(null); setInstruction(''); setParentId(null);
     try { setPhoto((await preparePhoto(file)).dataUrl); } catch (err) { setError((err as Error).message); }
+  }
+
+  /** Reuse a finished image as the new starting photo, then describe the next change yourself. */
+  async function editResult(it: Item) {
+    setError('');
+    try {
+      const blob = await fetch(`/api/studio/${it.id}/result`).then((r) => { if (!r.ok) throw new Error('Could not load that image'); return r.blob(); });
+      const { dataUrl } = await preparePhoto(new File([blob], 'result', { type: blob.type || 'image/jpeg' }));
+      setPhoto(dataUrl);
+      setParentId(it.id);
+      setKind('custom');
+      setAnalysis(null);
+      setResult(null);
+      setInstruction('');
+      setTimeout(() => promptRef.current?.focus(), 0);
+    } catch (err) { setError((err as Error).message); }
   }
 
   async function analyse() {
@@ -64,21 +84,22 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
     if (!photo || !instruction.trim()) return;
     setBusy('render'); setError('');
     try {
-      const item = await api<Item>(`/rooms/${roomId}/studio/render`, { body: { image: photo, kind, params, instruction, description: analysis?.description || undefined } });
+      const item = await api<Item>(`/rooms/${roomId}/studio/render`, { body: { image: photo, kind, params, instruction, description: analysis?.description || undefined, parentId: parentId ?? undefined } });
       setResult(item);
       setGallery((g) => [item, ...g]);
     } catch (err) { setError((err as Error).message); } finally { setBusy(null); }
   }
 
   const imageReady = caps?.image !== 'none';
-  const describe = (it: Item) => it.kind === 'age' ? `Age ${it.params.age}` : it.kind === 'era' ? `Year ${it.params.year}` : it.params.style ?? 'Restyle';
+  const describe = (it: Item) => it.kind === 'age' ? `Age ${it.params.age}` : it.kind === 'era' ? `Year ${it.params.year}` : it.kind === 'custom' ? `“${it.instruction.slice(0, 60)}”` : it.params.style ?? 'Restyle';
+  const promptOk = instruction.trim().length >= 10;
 
   return (
     <div className="grid gap-4 md:grid-cols-[1fr_260px]">
       <div className="space-y-4">
         {/* transformation picker */}
         <div className="flex rounded-md bg-muted p-0.5" role="tablist" aria-label="Transformation">
-          {([['age', 'Age change'], ['era', 'Era change'], ['restyle', 'Realistic restyle']] as const).map(([k, label]) => (
+          {([['age', 'Age change'], ['era', 'Era change'], ['restyle', 'Realistic restyle'], ['custom', 'Custom prompt']] as const).map(([k, label]) => (
             <button key={k} role="tab" aria-selected={kind === k} onClick={() => { setKind(k); setAnalysis(null); setResult(null); setInstruction(''); }}
               className={cn('flex-1 rounded-[5px] px-2 py-1.5 text-xs font-medium', kind === k ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{label}</button>
           ))}
@@ -87,6 +108,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
           {kind === 'age' && 'A portrait of a person. The same person is shown at another age; identity, pose and background stay.'}
           {kind === 'era' && 'A photo of a street or place. The same spot is shown as it would look in another year.'}
           {kind === 'restyle' && 'Any photo. Describe a realistic change (weather, time of day, season, lighting).'}
+          {kind === 'custom' && 'Write your own prompt: anything you want changed. Results can be edited again and again.'}
         </p>
         <div className="flex flex-wrap gap-1.5" aria-label="Preset">
           {kind === 'age' && AGES.map((a) => <Chip key={a} active={age === a} onClick={() => setAge(a)}>{a} years</Chip>)}
@@ -104,7 +126,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
               <button onClick={() => fileRef.current?.click()} className="grid aspect-[4/3] w-full place-items-center text-sm text-muted-foreground hover:bg-muted/70">Choose a photo</button>
             )}
             <figcaption className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground">
-              <span>Original</span>
+              <span className="truncate">{parentId ? 'From an earlier result' : 'Original'}</span>
               {photo && <button onClick={() => fileRef.current?.click()} className="font-medium text-foreground">Change</button>}
             </figcaption>
             <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={onFile} aria-label="Photo file" />
@@ -114,28 +136,39 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
               : <div className="grid aspect-[4/3] w-full place-items-center px-4 text-center text-xs text-muted-foreground">{busy === 'render' ? 'Rendering, usually 10 to 30 seconds' : 'The AI result appears here'}</div>}
             <figcaption className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground">
               <span className="truncate">{result ? describe(result) : 'Result'}</span>
-              {result && <a href={`/api/studio/${result.id}/result?download`} download className="shrink-0 font-medium text-foreground hover:underline">Download</a>}
+              {result && (
+                <span className="flex shrink-0 gap-2.5">
+                  {canEdit && <button onClick={() => editResult(result)} className="font-medium text-foreground hover:underline">Edit this result</button>}
+                  <a href={`/api/studio/${result.id}/result?download`} download className="font-medium text-foreground hover:underline">Download</a>
+                </span>
+              )}
             </figcaption>
           </figure>
         </div>
 
-        {/* analysis + instruction (what the report needs: the prompt used) */}
-        {analysis && (
-          <div className="space-y-2 rounded-md border p-3 text-sm">
-            {analysis.description && <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">The AI sees:</span> {analysis.description}</p>}
-            {analysis.warnings.map((w) => <p key={w} className="text-xs text-amber-700">{w}</p>)}
-            <label className="block">
-              <span className="mb-1 block text-xs text-muted-foreground">Edit instruction (sent to the image model; you can adjust it)</span>
-              <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={4} maxLength={1500} className="w-full resize-y rounded-md border bg-card p-2 text-xs" />
-            </label>
-          </div>
-        )}
+        {/* prompt: written by you, or by the AI after Analyse (and still editable) */}
+        <div className="space-y-2 rounded-md border p-3 text-sm">
+          {analysis?.description && <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">The AI sees:</span> {analysis.description}</p>}
+          {analysis?.warnings.map((w) => <p key={w} className="text-xs text-amber-700">{w}</p>)}
+          <label className="block">
+            <span className="mb-1 block text-xs text-muted-foreground">
+              {kind === 'custom' ? 'Your prompt (what should change in the photo)' : 'Prompt sent to the image model: write your own, or press Analyse to let the AI write it'}
+            </span>
+            <textarea ref={promptRef} value={instruction} onChange={(e) => setInstruction(e.target.value)} rows={4} maxLength={1500}
+              placeholder={kind === 'custom' ? 'e.g. make it night with neon signs, keep the people the same' : 'e.g. show this person at 70, grey hair and wrinkles, same pose and background'}
+              className="w-full resize-y rounded-md border bg-card p-2 text-xs" />
+          </label>
+          {instruction.length > 0 && !promptOk && <p className="text-xs text-muted-foreground">Write at least 10 characters.</p>}
+        </div>
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        {result?.note && <p className="text-xs text-amber-700" role="status">{result.note}</p>}
         {!canEdit && <p className="text-xs text-muted-foreground">Viewers can browse the gallery; ask the owner for edit access to create.</p>}
         {canEdit && (
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" disabled={!photo || !!busy} loading={busy === 'analyse'} onClick={analyse}>{analysis ? 'Analyse again' : '1. Analyse photo'}</Button>
-            <Button disabled={!photo || !instruction.trim() || !!busy || !imageReady} loading={busy === 'render'} onClick={render} title={imageReady ? '' : 'Image generation is turned off on this server'}>2. Generate</Button>
+            <Button variant="secondary" disabled={!photo || !!busy || (kind === 'custom' && instruction.trim().length < 3)} loading={busy === 'analyse'} onClick={analyse}>
+              {kind === 'custom' ? 'Improve my prompt with AI' : analysis ? 'Analyse again' : 'Analyse photo (optional)'}
+            </Button>
+            <Button disabled={!photo || !promptOk || !!busy || !imageReady} loading={busy === 'render'} onClick={render} title={imageReady ? '' : 'Image generation is turned off on this server'}>Generate</Button>
             <Button variant="ghost" onClick={onBack}>Back</Button>
           </div>
         )}
@@ -158,7 +191,8 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
                 </div>
               </button>
               <div className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground">
-                <span className="min-w-0 flex-1 truncate">{describe(it)}{it.author ? ` · ${it.author}` : ''}</span>
+                <span className="min-w-0 flex-1 truncate" title={it.instruction}>{it.parentId ? '↳ ' : ''}{describe(it)}{it.author ? ` · ${it.author}` : ''}</span>
+                {canEdit && <button onClick={() => editResult(it)} className="shrink-0 font-medium text-foreground hover:underline" aria-label={`Edit ${describe(it)} again`}>Edit</button>}
                 <a href={`/api/studio/${it.id}/result?download`} download className="shrink-0 font-medium text-foreground hover:underline" aria-label={`Download ${describe(it)}`}>Download</a>
               </div>
             </li>

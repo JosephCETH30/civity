@@ -144,7 +144,7 @@ create table if not exists studio_images (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references rooms(id) on delete cascade,
   user_id uuid references users(id) on delete set null,
-  kind text not null check (kind in ('age', 'era', 'restyle')),
+  kind text not null check (kind in ('age', 'era', 'restyle', 'custom')),
   params jsonb not null default '{}',
   instruction text not null,
   source bytea not null,
@@ -154,3 +154,7 @@ create table if not exists studio_images (
   created_at timestamptz not null default now()
 );
 create index if not exists studio_images_room_idx on studio_images(room_id, created_at desc);
+-- Results can be edited again (any number of times): custom prompts, and a link to the image they came from.
+alter table studio_images drop constraint if exists studio_images_kind_check;
+alter table studio_images add constraint studio_images_kind_check check (kind in ('age', 'era', 'restyle', 'custom'));
+alter table studio_images add column if not exists parent_id uuid references studio_images(id) on delete set null;

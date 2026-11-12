@@ -45,12 +45,26 @@ try {
   await A.getByRole('tab', { name: 'Era change' }).click();
   await A.getByRole('button', { name: '1960' }).click();
   await A.getByLabel('Photo file').setInputFiles(PHOTO);
-  await A.getByRole('button', { name: '1. Analyse photo' }).click();
-  await A.getByText('Edit instruction').waitFor({ timeout: 60000 });
+  await A.getByRole('button', { name: 'Analyse photo (optional)' }).click();
+  await A.getByText('The AI sees:').waitFor({ timeout: 60000 });
   const instruction = await A.locator('textarea').inputValue();
   if (instruction.length < 20) throw new Error('no instruction written');
   step(`realism: photo analysed, instruction (${instruction.length} chars) shown`);
   await A.screenshot({ path: OUT + 'realism-studio.png' });
+  if (process.env.STUDIO_RENDER) {
+    // Real render, then reuse the result with a manual prompt (needs the image provider configured).
+    await A.getByRole('button', { name: 'Generate', exact: true }).click();
+    await A.getByRole('button', { name: 'Edit this result' }).waitFor({ timeout: 120000 });
+    await A.getByRole('button', { name: 'Edit this result' }).click();
+    await A.getByText('From an earlier result').waitFor();
+    if ((await A.getByRole('tab', { name: 'Custom prompt' }).getAttribute('aria-selected')) !== 'true') throw new Error('custom tab not selected');
+    await A.locator('textarea').fill('add warm street lamps glowing along every road');
+    await A.waitForTimeout(46000); // the free generator allows one image per 45 s
+    await A.getByRole('button', { name: 'Generate', exact: true }).click();
+    await A.getByText(/^↳/).first().waitFor({ timeout: 120000 });
+    step('generated, then edited that result again with a manual prompt (linked in the gallery)');
+    await A.screenshot({ path: OUT + 'realism-reedit.png' });
+  }
   await A.getByRole('tab', { name: 'Photo → 3D' }).click();
   await A.getByLabel('Photo file').setInputFiles(PHOTO);
   await A.getByText('AI depth map').waitFor({ timeout: 240000 });

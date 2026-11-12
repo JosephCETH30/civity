@@ -21,6 +21,11 @@ export const TRANSFORMS = {
     needs: 'any',
     brief: (p: { style: string }) => `Re-render the photo with this change while keeping it photorealistic and the subject recognisable: ${p.style}.`,
   },
+  custom: {
+    label: 'Custom prompt',
+    needs: 'any',
+    brief: (p: { style: string }) => `Apply this edit, keep the result photorealistic and everything not mentioned unchanged: ${p.style}.`,
+  },
 } as const;
 export type TransformKind = keyof typeof TRANSFORMS;
 

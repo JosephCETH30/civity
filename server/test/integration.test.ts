@@ -268,6 +268,12 @@ test('fountain studio: analyse without providers falls back to the brief, render
   assert.equal(r.status, 502);
   assert.match(r.json.error, /turned off/);
   assert.deepEqual((await api(`/rooms/${roomId}/studio`, { token: users[4].token })).json, []);
+  // custom prompts: analysed from the user's own text; render accepts them (and a parent id) like the presets
+  const cu = await api(`/rooms/${roomId}/studio/analyse`, { token: users[1].token, body: { image: jpg, kind: 'custom', params: { style: 'make it night with neon signs' } } });
+  assert.equal(cu.status, 200);
+  assert.match(cu.json.instruction, /neon signs/);
+  const cr = await api(`/rooms/${roomId}/studio/render`, { token: users[1].token, body: { image: jpg, kind: 'custom', params: {}, instruction: 'make it night with neon signs', parentId: '00000000-0000-0000-0000-000000000000' } });
+  assert.equal(cr.status, 502, 'validated, then stopped only by the disabled image provider');
 });
 
 test('photo sculptures: upload photo + depth map, place it, and only real uploads are accepted', async () => {

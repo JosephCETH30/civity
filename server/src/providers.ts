@@ -65,10 +65,31 @@ export async function pollinationsImage(
   instruction: string,
   image: { mime: string; base64: string },
   opts: { description?: string; portrait?: boolean } = {},
-): Promise<{ mime: string; base64: string }> {
+): Promise<{ mime: string; base64: string; note?: string }> {
   const p = config.pollinations;
   if (!p) throw new ProviderError('pollinations', null, 'Image generation is turned off on this server');
+  if (p.key) {
+    try {
+      return await pollinationsRequest(instruction, image, opts, p.key, p.model);
+    } catch (e) {
+      // Key out of balance (402) or rejected (401/403): keep the studio working with the free text-to-image mode.
+      if (!(e instanceof ProviderError) || ![401, 402, 403].includes(e.status ?? 0)) throw e;
+      const out = await pollinationsRequest(instruction, image, opts, '', p.model);
+      return { ...out, note: 'The photo-editing credit is used up, so this image was made with the free generator (new image from the description). Top up the Pollinations key for exact edits again.' };
+    }
+  }
+  return pollinationsRequest(instruction, image, opts, '', p.model);
+}
+
+async function pollinationsRequest(
+  instruction: string,
+  image: { mime: string; base64: string },
+  opts: { description?: string; portrait?: boolean },
+  key: string,
+  model: string,
+): Promise<{ mime: string; base64: string }> {
   let res: Response;
+  const p = { key, model };
   if (p.key) {
     const form = new FormData();
     form.set('model', p.model);
