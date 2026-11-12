@@ -158,3 +158,7 @@ create index if not exists studio_images_room_idx on studio_images(room_id, crea
 alter table studio_images drop constraint if exists studio_images_kind_check;
 alter table studio_images add constraint studio_images_kind_check check (kind in ('age', 'era', 'restyle', 'custom'));
 alter table studio_images add column if not exists parent_id uuid references studio_images(id) on delete set null;
+-- Each creator decides whether a result is shared with the room. Images made before this existed stay shared;
+-- new ones start private.
+alter table studio_images add column if not exists shared boolean not null default true;
+alter table studio_images alter column shared set default false;

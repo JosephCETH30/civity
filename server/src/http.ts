@@ -262,7 +262,7 @@ export function createApp(manager: RoomManager) {
         'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime, parent_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id, created_at',
         [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime, parent?.id ?? null],
       );
-      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at, parentId: parent?.id ?? null, note: out.note });
+      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at, parentId: parent?.id ?? null, note: out.note, shared: false, mine: true });
     } catch (e) {
       if (e instanceof ProviderError) return bad(res, e.status === 429 ? 429 : 502, e.message);
       throw e;
@@ -273,9 +273,22 @@ export function createApp(manager: RoomManager) {
     const room = await studioAccess(req, res);
     if (!room) return;
     res.json(await q(
-      `select s.id, s.kind, s.params, s.instruction, s.created_at as "createdAt", s.parent_id as "parentId", p.display_name as "author"
-       from studio_images s left join profiles p on p.id = s.user_id where s.room_id = $1 order by s.created_at desc limit 60`, [room.id]));
+      `select s.id, s.kind, s.params, s.instruction, s.created_at as "createdAt", s.parent_id as "parentId", p.display_name as "author",
+              s.shared, (s.user_id = $2) as mine
+       from studio_images s left join profiles p on p.id = s.user_id
+       where s.room_id = $1 and (s.shared or s.user_id = $2) order by s.created_at desc limit 120`, [room.id, req.identity!.sub]));
   });
+  // Share a result with the room, or make it private again. Only its creator can.
+  api.patch('/studio/:id', requireUser, async (req, res) => {
+    if (!/^[0-9a-f-]{36}$/i.test(String(req.params.id))) return bad(res, 404, 'Not found');
+    const body = parse(z.object({ shared: z.boolean() }), req.body, res);
+    if (!body) return;
+    const [row] = await q('update studio_images set shared = $3 where id = $1 and user_id = $2 returning id, shared', [req.params.id, req.identity!.sub, body.shared]);
+    if (!row) return bad(res, 404, 'Only the person who made this image can change its sharing');
+    res.json(row);
+  });
+  // shortcut: image bytes are served by unguessable id (img tags send no auth header); private images are hidden
+  // from other users' gallery lists but not access-controlled per request. Add signed URLs if that matters.
   api.get('/studio/:id/:which', async (req, res) => {
     const { id, which } = req.params;
     if (!/^[0-9a-f-]{36}$/i.test(id) || (which !== 'source' && which !== 'result')) return bad(res, 404, 'Not found');

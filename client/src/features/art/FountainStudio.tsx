@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 type Kind = 'age' | 'era' | 'restyle' | 'custom';
 interface Caps { text: string; vision: string; image: string }
 interface Analysis { description: string; instruction: string; warnings: string[]; provider: string }
-interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string; parentId?: string | null; note?: string }
+interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string; parentId?: string | null; note?: string; shared?: boolean; mine?: boolean }
 
 const AGES = [5, 17, 30, 50, 70];
 const YEARS = [1945, 1960, 1980, 1990, 2040];
@@ -36,6 +36,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
   const [result, setResult] = useState<Item | null>(null);
   const [gallery, setGallery] = useState<Item[]>([]);
   const [parentId, setParentId] = useState<string | null>(null);
+  const [galleryTab, setGalleryTab] = useState<'mine' | 'shared'>('mine');
   const fileRef = useRef<HTMLInputElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
 
@@ -52,6 +53,17 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
     if (!file) return;
     setError(''); setAnalysis(null); setResult(null); setInstruction(''); setParentId(null);
     try { setPhoto((await preparePhoto(file)).dataUrl); } catch (err) { setError((err as Error).message); }
+  }
+
+  /** Share a result with everyone in the room, or make it private again (creator only). */
+  async function setShared(it: Item, shared: boolean) {
+    setError('');
+    try {
+      await api(`/studio/${it.id}`, { method: 'PATCH', body: { shared } });
+      const patch = (x: Item) => (x.id === it.id ? { ...x, shared } : x);
+      setGallery((g) => g.map(patch));
+      setResult((r) => (r ? patch(r) : r));
+    } catch (err) { setError((err as Error).message); }
   }
 
   /** Reuse a finished image as the new starting photo, then describe the next change yourself. */
@@ -93,6 +105,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
   const imageReady = caps?.image !== 'none';
   const describe = (it: Item) => it.kind === 'age' ? `Age ${it.params.age}` : it.kind === 'era' ? `Year ${it.params.year}` : it.kind === 'custom' ? `“${it.instruction.slice(0, 60)}”` : it.params.style ?? 'Restyle';
   const promptOk = instruction.trim().length >= 10;
+  const shownGallery = gallery.filter((x) => (galleryTab === 'mine' ? x.mine : x.shared));
 
   return (
     <div className="grid gap-4 md:grid-cols-[1fr_260px]">
@@ -138,6 +151,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
               <span className="truncate">{result ? describe(result) : 'Result'}</span>
               {result && (
                 <span className="flex shrink-0 gap-2.5">
+                  {result.mine && <ShareToggle item={result} onChange={setShared} />}
                   {canEdit && <button onClick={() => editResult(result)} className="font-medium text-foreground hover:underline">Edit this result</button>}
                   <a href={`/api/studio/${result.id}/result?download`} download className="font-medium text-foreground hover:underline">Download</a>
                 </span>
@@ -179,10 +193,22 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
       </div>
 
       <aside className="space-y-2">
-        <h3 className="text-xs font-medium text-muted-foreground">Room gallery · {gallery.length}</h3>
-        {gallery.length === 0 && <p className="text-xs text-muted-foreground">Results made at this fountain appear here for everyone in the room.</p>}
-        <ul className="grid max-h-[52vh] grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid-cols-1">
-          {gallery.map((it) => (
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-medium text-muted-foreground">Gallery</h3>
+          <div className="flex rounded-md bg-muted p-0.5" role="tablist" aria-label="Gallery">
+            {([['mine', `Mine · ${gallery.filter((x) => x.mine).length}`], ['shared', `Shared · ${gallery.filter((x) => x.shared).length}`]] as const).map(([t, label]) => (
+              <button key={t} role="tab" aria-selected={galleryTab === t} onClick={() => setGalleryTab(t)}
+                className={cn('whitespace-nowrap rounded-[5px] px-2 py-1 text-[11px] font-medium', galleryTab === t ? 'bg-card shadow-sm' : 'text-muted-foreground hover:text-foreground')}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {shownGallery.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            {galleryTab === 'mine' ? 'Images you generate land here, private to you. Press Share to show one to the room.' : 'Nothing shared yet. Images people choose to share appear here for everyone in the room.'}
+          </p>
+        )}
+        <ul className="grid max-h-[52vh] grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid-cols-1" aria-label="Gallery images">
+          {shownGallery.map((it) => (
             <li key={it.id} className="overflow-hidden rounded-md border">
               <button onClick={() => setResult(it)} className="block w-full text-left" aria-label={`Show ${describe(it)}`}>
                 <div className="grid grid-cols-2">
@@ -191,7 +217,8 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
                 </div>
               </button>
               <div className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground">
-                <span className="min-w-0 flex-1 truncate" title={it.instruction}>{it.parentId ? '↳ ' : ''}{describe(it)}{it.author ? ` · ${it.author}` : ''}</span>
+                <span className="min-w-0 flex-1 truncate" title={it.instruction}>{it.parentId ? '↳ ' : ''}{describe(it)}{it.author && !it.mine ? ` · ${it.author}` : ''}</span>
+                {it.mine && <ShareToggle item={it} onChange={setShared} />}
                 {canEdit && <button onClick={() => editResult(it)} className="shrink-0 font-medium text-foreground hover:underline" aria-label={`Edit ${describe(it)} again`}>Edit</button>}
                 <a href={`/api/studio/${it.id}/result?download`} download className="shrink-0 font-medium text-foreground hover:underline" aria-label={`Download ${describe(it)}`}>Download</a>
               </div>
@@ -200,6 +227,17 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
         </ul>
       </aside>
     </div>
+  );
+}
+
+/** Private / shared switch on your own images. */
+function ShareToggle({ item, onChange }: { item: Item; onChange: (it: Item, shared: boolean) => void }) {
+  return (
+    <button onClick={() => onChange(item, !item.shared)} aria-pressed={!!item.shared}
+      title={item.shared ? 'Everyone in the room can see this. Click to make it private.' : 'Only you can see this. Click to share it with the room.'}
+      className={cn('shrink-0 font-medium hover:underline', item.shared ? 'text-green-700' : 'text-foreground')}>
+      {item.shared ? 'Shared ✓' : 'Share'}
+    </button>
   );
 }
 

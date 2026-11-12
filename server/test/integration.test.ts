@@ -274,6 +274,21 @@ test('fountain studio: analyse without providers falls back to the brief, render
   assert.match(cu.json.instruction, /neon signs/);
   const cr = await api(`/rooms/${roomId}/studio/render`, { token: users[1].token, body: { image: jpg, kind: 'custom', params: {}, instruction: 'make it night with neon signs', parentId: '00000000-0000-0000-0000-000000000000' } });
   assert.equal(cr.status, 502, 'validated, then stopped only by the disabled image provider');
+
+  // private by default; the creator decides to share; others only ever see shared ones
+  const ins = (shared?: boolean) => pool.query(
+    `insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime${shared === undefined ? '' : ', shared'})
+     values ($1, $2, 'custom', '{}', 'a test prompt', '\\x00', 'image/jpeg', '\\x00', 'image/jpeg'${shared === undefined ? '' : ', $3'}) returning id`,
+    shared === undefined ? [roomId, users[1].id] : [roomId, users[1].id, shared]).then((r) => r.rows[0].id as string);
+  const priv = await ins();
+  const pub = await ins(true);
+  const mine = (await api(`/rooms/${roomId}/studio`, { token: users[1].token })).json;
+  assert.deepEqual(mine.map((x: any) => [x.id, x.shared, x.mine]).sort(), [[priv, false, true], [pub, true, true]].sort());
+  const theirs = (await api(`/rooms/${roomId}/studio`, { token: users[4].token })).json;
+  assert.deepEqual(theirs.map((x: any) => x.id), [pub], 'others see only shared images');
+  assert.equal((await api(`/studio/${priv}`, { method: 'PATCH', token: users[4].token, body: { shared: true } })).status, 404, 'only the creator can share');
+  assert.equal((await api(`/studio/${priv}`, { method: 'PATCH', token: users[1].token, body: { shared: true } })).status, 200);
+  assert.equal((await api(`/rooms/${roomId}/studio`, { token: users[4].token })).json.length, 2);
 });
 
 test('photo sculptures: upload photo + depth map, place it, and only real uploads are accepted', async () => {

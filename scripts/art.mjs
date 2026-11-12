@@ -63,6 +63,12 @@ try {
     await A.getByRole('button', { name: 'Generate', exact: true }).click();
     await A.getByText(/^↳/).first().waitFor({ timeout: 120000 });
     step('generated, then edited that result again with a manual prompt (linked in the gallery)');
+    // New results are private; share one and it shows up in the Shared tab.
+    if ((await A.getByRole('tab', { name: /^Shared · 0/ }).count()) !== 1) throw new Error('new results should start private');
+    await A.getByRole('list', { name: 'Gallery images' }).getByRole('listitem').first().getByRole('button', { name: 'Share' }).click();
+    await A.getByRole('tab', { name: /^Shared · 1/ }).click();
+    await A.getByRole('list', { name: 'Gallery images' }).getByRole('listitem').first().getByRole('button', { name: 'Shared ✓' }).waitFor();
+    step('results start private; sharing one moves it into the Shared tab');
     await A.screenshot({ path: OUT + 'realism-reedit.png' });
   }
   await A.getByRole('tab', { name: 'Photo → 3D' }).click();
