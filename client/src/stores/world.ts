@@ -3,7 +3,7 @@ import type { BattleStats, ChatMessage, CityObject, CityRoute, LudoState, QuizSt
 import { hasWebGL, initialQuality, isTouchDevice, type QualityLevel } from '../engine/optimization/quality';
 
 export type ConnStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
-export type CameraMode = 'third' | 'top' | 'free' | 'overview';
+export type CameraMode = 'first' | 'third' | 'top' | 'free' | 'overview';
 export type Tool = { kind: 'select' } | { kind: 'place'; type: ObjectType } | { kind: 'route'; stops: string[] };
 
 export const loadPref = <T,>(k: string, fallback: T): T => {

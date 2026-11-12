@@ -29,9 +29,16 @@ export const input = { x: 0, z: 0, run: false, joyX: 0, joyZ: 0 };
 export const perf = { fps: 0, calls: 0, tris: 0 };
 
 /** Recent shots to draw as tracers (performance.now() timestamps). */
-export const shots: { o: [number, number, number]; e: [number, number, number]; at: number; hit: boolean }[] = [];
+export const shots: { o: [number, number, number]; e: [number, number, number]; at: number; hit: boolean; mine: boolean }[] = [];
 /** Last time I hit someone (crosshair hit marker) and the last time I was hit (red screen flash). */
-export const battleFx = { hitAt: 0, hurtAt: 0 };
+export const battleFx = { hitAt: 0, hurtAt: 0, recoil: 0 };
+/** Per avatar ('local' for me): when it last fired (arm recoil) and was last hit (flinch). */
+export const fxShotAt = new Map<string, number>();
+export const fxHitAt = new Map<string, number>();
+/** Particle bursts: muzzle flashes, impact sparks, hit blood-red sparks, elimination bursts. */
+export const bursts: { x: number; y: number; z: number; at: number; kind: 'flash' | 'wall' | 'hit' | 'kill'; seed: number; mine?: boolean }[] = [];
+/** First-person view angles (same convention as the orbit azimuth: looking along (-sin yaw, -cos yaw)). */
+export const view = { yaw: 0, pitch: 0 };
 
 /** Placement ghost position (snapped) for the 3D editor; null if pointer is off the ground. */
 export const ghost = { x: 0, z: 0, visible: false };

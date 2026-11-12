@@ -1,6 +1,6 @@
 // PvP battle overlay: join/leave toggle, crosshair, health, scoreboard, kill feed, hit/hurt feedback, and a Fire
 // button on touch screens. All numbers come from the server; this only displays them.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BATTLE } from '@civitas/shared';
 import { useWorld } from '../../stores/world';
 import { serverNow } from '../../services/realtime';
@@ -53,7 +53,7 @@ export function BattleHud({ mobile = false }: { mobile?: boolean }) {
   const hitMarker = now - battleFx.hitAt < 220;
   const hurt = now - battleFx.hurtAt < 300;
   const board = Object.entries(stats).sort((a, b) => b[1].kills - a[1].kills || a[1].deaths - b[1].deaths).slice(0, 6);
-  const crosshair = !mobile && cameraMode === 'third';
+  const crosshair = cameraMode === 'first' || (!mobile && cameraMode === 'third');
 
   return (
     <>
@@ -91,7 +91,8 @@ export function BattleHud({ mobile = false }: { mobile?: boolean }) {
           <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/15" role="meter" aria-label="Health" aria-valuemin={0} aria-valuemax={BATTLE.maxHp} aria-valuenow={me.hp}>
             <div className={cn('h-full transition-[width] duration-200', me.hp > 60 ? 'bg-green-500' : me.hp > 30 ? 'bg-yellow-500' : 'bg-red-500')} style={{ width: `${me.hp}%` }} />
           </div>
-          {!mobile && <p className="mt-1.5 text-[11px] text-white/60">{cameraMode === 'third' ? 'Click or F to fire · drag to aim' : 'F to fire where you face · Follow view aims with the mouse'}</p>}
+          {!mobile && <p className="mt-1.5 text-[11px] text-white/60">{cameraMode === 'first' ? 'Click the view to aim with the mouse · hold click to fire · Esc frees the mouse' : cameraMode === 'third' ? 'Click or F to fire · drag to aim · Eyes view for mouse aim' : 'F to fire where you face · try the Eyes view'}</p>}
+          {mobile && <p className="mt-1.5 text-[11px] text-white/60">{cameraMode === 'first' ? 'Drag the view to aim · hold Fire' : 'Hold Fire · Eyes button for aiming'}</p>}
         </div>
         <KillFeed feed={feed} mobile={mobile} inline />
       </div>
@@ -113,16 +114,37 @@ export function BattleHud({ mobile = false }: { mobile?: boolean }) {
         </div>
       )}
 
-      {mobile && !dead && (
+      {mobile && !dead && <FireButton />}
+    </>
+  );
+}
+
+/** Touch: hold to keep firing. */
+function FireButton() {
+  const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const stop = () => { clearInterval(timer.current); timer.current = undefined; };
+  useEffect(() => stop, []);
+  return (
         <button
-          onPointerDown={(e) => { e.preventDefault(); fire(); }}
+          onPointerDown={(e) => { e.preventDefault(); fire(); stop(); timer.current = setInterval(fire, BATTLE.cooldownMs + 10); }}
+          onPointerUp={stop} onPointerCancel={stop} onPointerLeave={stop}
           className="pointer-events-auto absolute bottom-[calc(80px+env(safe-area-inset-bottom))] right-[156px] z-10 grid h-20 w-20 place-items-center rounded-full bg-red-600/90 text-sm font-semibold text-white shadow-lg active:bg-red-700"
           aria-label="Fire"
         >
           Fire
         </button>
-      )}
-    </>
+  );
+}
+
+/** Touch: quick switch between the eyes view (aim by dragging) and the map-like top view. */
+export function ViewToggle({ className }: { className?: string }) {
+  const mode = useWorld((s) => s.cameraMode);
+  const first = mode === 'first';
+  return (
+    <button onClick={() => useWorld.getState().set({ cameraMode: first ? 'top' : 'first' })} aria-pressed={first}
+      className={cn('flex h-10 shrink-0 items-center rounded-full px-3.5 text-xs font-medium text-white', className)}>
+      {first ? 'Top view' : 'Eyes view'}
+    </button>
   );
 }
 

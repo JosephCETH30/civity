@@ -2,7 +2,8 @@
 // 10 Hz movement uplink, and routing server messages into the world store / transient maps.
 import { BATTLE, type ClientMessage, type PlayerState, type ServerMessage } from '@civitas/shared';
 import { useWorld } from '../stores/world';
-import { battleFx, localPlayer, remoteRendered, remoteTargets, shots } from '../engine/core/transient';
+import { battleFx, bursts, fxHitAt, fxShotAt, localPlayer, remoteRendered, remoteTargets, shots } from '../engine/core/transient';
+import { falloff, playHit, playKill, playShot } from '../engine/combat/sfx';
 import { playerNow } from '../engine/core/interactions';
 import { tokenStore } from './api';
 
@@ -191,11 +192,25 @@ class RealtimeClient {
       }
       case 'shot': {
         const me = st.self?.sessionId;
-        shots.push({ o: m.o, e: m.e, at: performance.now(), hit: !!m.hit });
+        const t = performance.now();
+        shots.push({ o: m.o, e: m.e, at: t, hit: !!m.hit, mine: m.from === me });
         if (shots.length > 40) shots.splice(0, shots.length - 40);
-        if (m.hit && m.from === me) battleFx.hitAt = performance.now();
+        // Effects: muzzle flash, impact sparks (red on a player), shooter recoil, victim flinch, sounds.
+        const seed = Math.random() * 1000;
+        bursts.push({ x: m.o[0], y: m.o[1], z: m.o[2], at: t, kind: 'flash', seed, mine: m.from === me });
+        bursts.push({ x: m.e[0], y: m.e[1], z: m.e[2], at: t, kind: m.kill ? 'kill' : m.hit ? 'hit' : 'wall', seed: seed + 1 });
+        if (bursts.length > 60) bursts.splice(0, bursts.length - 60);
+        const key = (id: string) => (id === me ? 'local' : id);
+        fxShotAt.set(key(m.from), t);
+        if (m.hit) fxHitAt.set(key(m.hit), t);
+        const dist = Math.hypot(m.o[0] - localPlayer.x, m.o[2] - localPlayer.z);
+        playShot(m.from === me ? 0.8 : falloff(dist));
+        if (m.hit && m.from === me) playHit(true);
+        if (m.kill) playKill(m.from === me || m.hit === me ? 1 : falloff(Math.hypot(m.e[0] - localPlayer.x, m.e[2] - localPlayer.z)));
+        if (m.hit && m.from === me) battleFx.hitAt = t;
         if (m.hit && m.hit === me) {
-          battleFx.hurtAt = performance.now();
+          playHit(false);
+          battleFx.hurtAt = t;
           localPlayer.hitAt = playerNow();
           if (m.kill) {
             Object.assign(localPlayer, { fallUntil: playerNow() + BATTLE.respawnMs, seat: null, moved: true });

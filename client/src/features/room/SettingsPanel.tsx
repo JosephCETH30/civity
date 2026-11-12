@@ -6,7 +6,7 @@ import { Select } from '../../components/ui';
 import { useEffect, useState } from 'react';
 import { perf } from '../../engine/core/transient';
 
-const CAMERAS: [CameraMode, string, string][] = [['third', 'Third person', 'Follow'], ['top', 'Top-down', 'Top'], ['free', 'Free', 'Free'], ['overview', 'Overview', 'City']];
+const CAMERAS: [CameraMode, string, string][] = [['first', 'First person (eyes)', 'Eyes'], ['third', 'Third person', 'Follow'], ['top', 'Top-down', 'Top'], ['free', 'Free', 'Free'], ['overview', 'Overview', 'City']];
 
 export function CameraSwitch({ light = false }: { light?: boolean }) {
   const mode = useWorld((s) => s.cameraMode);

@@ -129,7 +129,7 @@ function Scene() {
       <Terrain worldSize={room.worldSize} shadows={profile.shadows} onGroundMove={onGroundMove} onGroundOut={() => (ghost.visible = false)} onGroundClick={onGroundClick} />
       <gridHelper args={[room.worldSize, room.worldSize / 8, '#a89a80', '#bdb096']} position={[0, 0.03, 0]} visible={tool.kind === 'place'} />
 
-      <CityObjects objects={unselected} standardMaterial={profile.standardMaterial} shadows={profile.shadows} details={profile.details} viewDistance={profile.viewDistance} chunk={profile.chunk} onPick={onPick} />
+      <CityObjects objects={unselected} standardMaterial={profile.standardMaterial} shadows={profile.shadows} viewDistance={profile.viewDistance} chunk={profile.chunk} onPick={onPick} />
       {insideObj && <Interior building={insideObj} />}
       <ArtworkReliefs objects={allObjects} lowDetail={quality === 'low'} />
       {selected && <SelectedObject object={selected} standard={profile.standardMaterial} />}
@@ -138,7 +138,7 @@ function Scene() {
       <Transit routes={routes} objects={objectsMap} sim={sim} highlightStops={tool.kind === 'route' ? tool.stops : []} carsPer100m={quality === 'low' ? 1.5 : 3} />
 
       <BattleScene />
-      {me && <Avatar sessionId="local" name={me.name} color={me.color} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} armed={!!battle[me.id]} />}
+      {me && cameraMode !== 'first' && <Avatar sessionId="local" name={me.name} color={me.color} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} armed={!!battle[me.id]} />}
       {Object.values(players)
         .filter((p) => p.id !== self?.sessionId)
         .map((p) => (

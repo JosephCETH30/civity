@@ -280,6 +280,10 @@ export function createApp(manager: RoomManager) {
     const [row] = await q(`select ${which} as data, ${which}_mime as mime from studio_images where id = $1`, [id]);
     if (!row) return bad(res, 404, 'Not found');
     res.set({ 'content-type': row.mime, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' });
+    if (req.query.download !== undefined) {
+      const ext = String(row.mime).split('/')[1]?.replace('jpeg', 'jpg') || 'img';
+      res.set('content-disposition', `attachment; filename="civitas-${which}-${id.slice(0, 8)}.${ext}"`);
+    }
     res.send(row.data);
   });
 

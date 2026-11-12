@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { BATTLE, OBJECT_INFO, SOLID_TYPES, rayBox, rayCylinder } from '@civitas/shared';
 import { useWorld } from '../../stores/world';
 import { realtime, serverNow } from '../../services/realtime';
-import { localPlayer, remoteRendered, remoteTargets } from '../core/transient';
+import { battleFx, localPlayer, remoteRendered, remoteTargets } from '../core/transient';
 
 type Vec = [number, number, number];
 let camera: THREE.Camera | null = null;
@@ -57,12 +57,13 @@ export function fire() {
   const o: Vec = [localPlayer.x, localPlayer.y + 1.3, localPlayer.z];
   let d: Vec;
   camera?.getWorldDirection(_dir);
-  const thirdPerson = st.cameraMode === 'third' && camera && Math.abs(_dir.y) < 0.75;
+  const firstPerson = st.cameraMode === 'first';
+  const thirdPerson = (firstPerson || (st.cameraMode === 'third' && Math.abs(_dir.y) < 0.75)) && !!camera;
   if (thirdPerson && camera) {
     // Ray from the camera through the crosshair; aim the muzzle at whatever that ray hits first beyond the player.
     const ro: Vec = [camera.position.x, camera.position.y, camera.position.z];
     const rd: Vec = [_dir.x, _dir.y, _dir.z];
-    const tMin = Math.hypot(o[0] - ro[0], o[1] - ro[1], o[2] - ro[2]) + 0.6;
+    const tMin = firstPerson ? 0.3 : Math.hypot(o[0] - ro[0], o[1] - ro[1], o[2] - ro[2]) + 0.6;
     let t = nearestBlock(ro, rd, BATTLE.range + tMin);
     for (const p of targets()) {
       const h = rayCylinder(ro, rd, p.x, p.y, p.z, BATTLE.radius, BATTLE.height);
@@ -88,9 +89,9 @@ export function fire() {
       d = [v.x, v.y, v.z];
     }
   }
-  // Turn the character toward the shot so others see who fired where.
-  localPlayer.r = Math.atan2(d[0], d[2]);
-  localPlayer.moved = true;
+  // Turn the character toward the shot so others see who fired where; kick the view up a little (recoil).
+  if (!firstPerson) { localPlayer.r = Math.atan2(d[0], d[2]); localPlayer.moved = true; }
+  battleFx.recoil += 0.035;
   realtime.send({ t: 'shoot', o, d });
 }
 
@@ -98,5 +99,5 @@ export function toggleBattle() {
   const st = useWorld.getState();
   if (!st.inBattle && st.renderMode === '2d') return st.notify('Battle needs the 3D view. Switch to 3D in Settings.', 'error');
   realtime.send({ t: 'battle', action: st.inBattle ? 'leave' : 'join' });
-  if (!st.inBattle && st.cameraMode !== 'third' && st.cameraMode !== 'top') st.set({ cameraMode: 'third' });
+  if (!st.inBattle && (st.cameraMode === 'free' || st.cameraMode === 'overview')) st.set({ cameraMode: 'third' });
 }

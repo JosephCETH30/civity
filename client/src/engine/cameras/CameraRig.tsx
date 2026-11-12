@@ -4,11 +4,12 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitImpl } from 'three-stdlib';
 import { INTERIOR_DEPTH } from '@civitas/shared';
-import { localPlayer } from '../core/transient';
+import { battleFx, localPlayer, view } from '../core/transient';
 import { playerNow, stepLocalPlayer } from '../core/interactions';
 import { useWorld, type CameraMode } from '../../stores/world';
 
 const PRESETS: Record<CameraMode, { dist: number; polar: number; minPolar: number; maxPolar: number; follow: boolean; pan: boolean }> = {
+  first: { dist: 10, polar: 1.18, minPolar: 0.3, maxPolar: 1.45, follow: true, pan: false }, // orbit is off in first person
   third: { dist: 10, polar: 1.18, minPolar: 0.3, maxPolar: 1.45, follow: true, pan: false },
   top: { dist: 58, polar: 0.15, minPolar: 0, maxPolar: 0.6, follow: true, pan: false },
   free: { dist: 50, polar: 0.9, minPolar: 0.05, maxPolar: 1.5, follow: false, pan: true },
@@ -35,6 +36,14 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
   useEffect(() => {
     const c = controls.current;
     if (!c) return;
+    c.enabled = mode !== 'first';
+    if (mode === 'first') {
+      // Look the way the camera was looking.
+      view.yaw = c.getAzimuthalAngle();
+      view.pitch = 0;
+      transition.current = 0;
+      return;
+    }
     const p = mode === 'third' && inBattle ? BATTLE_THIRD : PRESETS[mode];
     const target = p.follow ? new THREE.Vector3(localPlayer.x, (localPlayer.inside ? INTERIOR_DEPTH : 0) + 1.5, localPlayer.z) : mode === 'overview' ? new THREE.Vector3(0, 0, 0) : c.target.clone();
     const dist = mode === 'overview' ? worldSize * 0.95 : localPlayer.inside ? 8 : p.dist;
@@ -67,6 +76,20 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
     const c = controls.current;
     if (!c) return;
     const dt = Math.min(rawDt, 0.1);
+    if (mode === 'first') {
+      stepLocalPlayer(dt, view.yaw, worldSize);
+      // Body faces where you look; the eyes ride on the body (lower when seated or knocked down).
+      const r = view.yaw + Math.PI;
+      if (Math.abs(r - localPlayer.r) > 1e-3 && localPlayer.a !== 'sit') { localPlayer.r = r; localPlayer.moved = true; }
+      const eye = localPlayer.a === 'sit' ? 1.2 : localPlayer.a === 'fall' ? 0.45 : 1.68;
+      camera.position.set(localPlayer.x, localPlayer.y + eye, localPlayer.z);
+      battleFx.recoil *= Math.exp(-dt * 14);
+      camera.rotation.set(view.pitch + battleFx.recoil, view.yaw, 0, 'YXZ');
+      const since = playerNow() - localPlayer.hitAt;
+      if (localPlayer.hitAt && since < 300) camera.rotation.z = (Math.random() - 0.5) * 0.04 * (1 - since / 300);
+      last.current.set(localPlayer.x, localPlayer.inside ? INTERIOR_DEPTH : 0, localPlayer.z);
+      return;
+    }
     stepLocalPlayer(dt, c.getAzimuthalAngle(), worldSize);
     if (mode === 'third' && localPlayer.a === 'walk' && !drag.current.active && performance.now() - drag.current.endedAt > 700) {
       const cur = c.getAzimuthalAngle();
@@ -101,5 +124,55 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
     c.update();
   });
 
-  return <OrbitControls ref={controls as any} makeDefault enableDamping dampingFactor={0.12} screenSpacePanning={false} />;
+  return (
+    <>
+      <OrbitControls ref={controls as any} makeDefault enableDamping dampingFactor={0.12} screenSpacePanning={false} />
+      {mode === 'first' && <FirstPersonLook />}
+    </>
+  );
+}
+
+/** First person: mouse look with pointer lock on desktop (click to lock, Esc to release), drag to look on touch. */
+function FirstPersonLook() {
+  const { gl } = useThree();
+  useEffect(() => {
+    const el = gl.domElement;
+    const clampPitch = () => { view.pitch = Math.max(-1.35, Math.min(1.35, view.pitch)); };
+    let touch: { id: number; x: number; y: number } | null = null;
+    const down = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') {
+        if (document.pointerLockElement !== el) el.requestPointerLock?.();
+        return;
+      }
+      if (!touch) touch = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    };
+    const move = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') {
+        if (document.pointerLockElement !== el) return;
+        view.yaw -= e.movementX * 0.0022;
+        view.pitch -= e.movementY * 0.0022;
+      } else if (touch && e.pointerId === touch.id) {
+        view.yaw -= (e.clientX - touch.x) * 0.006;
+        view.pitch -= (e.clientY - touch.y) * 0.006;
+        touch.x = e.clientX; touch.y = e.clientY;
+      }
+      clampPitch();
+    };
+    const up = (e: PointerEvent) => { if (touch && e.pointerId === touch.id) touch = null; };
+    // A dialog opened (tree games, studio): give the mouse back.
+    const unsub = useWorld.subscribe((s) => { if ((s.ludoTree || s.artStudio) && document.pointerLockElement === el) document.exitPointerLock(); });
+    el.addEventListener('pointerdown', down);
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+    return () => {
+      el.removeEventListener('pointerdown', down);
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      unsub();
+      if (document.pointerLockElement === el) document.exitPointerLock();
+    };
+  }, [gl]);
+  return null;
 }

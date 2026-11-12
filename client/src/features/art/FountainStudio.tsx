@@ -100,7 +100,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
         {/* photo + result */}
         <div className="grid grid-cols-2 gap-3">
           <figure className="min-h-40 overflow-hidden rounded-md border bg-muted">
-            {photo ? <img src={photo} alt="Your photo" className="aspect-[4/3] w-full object-cover" /> : (
+            {photo || result ? <img src={photo ?? `/api/studio/${result!.id}/source`} alt="Original photo" className="aspect-[4/3] w-full object-cover" /> : (
               <button onClick={() => fileRef.current?.click()} className="grid aspect-[4/3] w-full place-items-center text-sm text-muted-foreground hover:bg-muted/70">Choose a photo</button>
             )}
             <figcaption className="flex items-center justify-between px-2 py-1 text-xs text-muted-foreground">
@@ -112,7 +112,10 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
           <figure className="min-h-40 overflow-hidden rounded-md border bg-muted">
             {result ? <img src={`/api/studio/${result.id}/result`} alt={`AI result: ${describe(result)}`} className="aspect-[4/3] w-full object-cover" />
               : <div className="grid aspect-[4/3] w-full place-items-center px-4 text-center text-xs text-muted-foreground">{busy === 'render' ? 'Rendering, usually 10 to 30 seconds' : 'The AI result appears here'}</div>}
-            <figcaption className="px-2 py-1 text-xs text-muted-foreground">{result ? describe(result) : 'Result'}</figcaption>
+            <figcaption className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted-foreground">
+              <span className="truncate">{result ? describe(result) : 'Result'}</span>
+              {result && <a href={`/api/studio/${result.id}/result?download`} download className="shrink-0 font-medium text-foreground hover:underline">Download</a>}
+            </figcaption>
           </figure>
         </div>
 
@@ -153,8 +156,11 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
                   <img src={`/api/studio/${it.id}/source`} alt="" className="aspect-square w-full object-cover" loading="lazy" />
                   <img src={`/api/studio/${it.id}/result`} alt="" className="aspect-square w-full object-cover" loading="lazy" />
                 </div>
-                <p className="truncate px-2 py-1 text-[11px] text-muted-foreground">{describe(it)}{it.author ? ` · ${it.author}` : ''}</p>
               </button>
+              <div className="flex items-center gap-2 px-2 py-1 text-[11px] text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate">{describe(it)}{it.author ? ` · ${it.author}` : ''}</span>
+                <a href={`/api/studio/${it.id}/result?download`} download className="shrink-0 font-medium text-foreground hover:underline" aria-label={`Download ${describe(it)}`}>Download</a>
+              </div>
             </li>
           ))}
         </ul>

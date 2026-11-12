@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AnimState } from '@civitas/shared';
-import { localPlayer, remoteRendered, remoteTargets } from '../core/transient';
+import { fxHitAt, fxShotAt, localPlayer, remoteRendered, remoteTargets } from '../core/transient';
 
 // Original stylised figure (not a licensed character). ~600 triangles, 7 draw calls full / 2 lite.
 const torsoGeo = new THREE.CapsuleGeometry(0.3, 0.45, 4, 10);
@@ -107,6 +107,11 @@ export function Avatar({ sessionId, name, color, speaking, showLabel, lite, arme
     else if (anim === 'jump') { legX = 0.45; armLX = armRX = -2.4; }
     else if (anim === 'wave') { armRZ = 2.5 + Math.sin(phase.current) * 0.35; }
     if (armed && anim !== 'sit' && anim !== 'fall') armRX = -1.45; // aim the blaster forward
+    // Battle feedback: arm kicks up when firing; the body flinches back when hit.
+    const nowMs = performance.now();
+    const shotK = Math.max(0, 1 - (nowMs - (fxShotAt.get(sessionId) ?? -1e9)) / 150);
+    const hitK = Math.max(0, 1 - (nowMs - (fxHitAt.get(sessionId) ?? -1e9)) / 260);
+    armRX -= shotK * 0.35;
     if (legL.current) legL.current.rotation.x = anim === 'sit' ? legX : anim === 'jump' ? -legX : legX;
     if (legR.current) legR.current.rotation.x = anim === 'sit' || anim === 'jump' ? legX : -legX;
     if (legL.current) legL.current.position.y = 0.85 + bodyY;
@@ -118,7 +123,8 @@ export function Avatar({ sessionId, name, color, speaking, showLabel, lite, arme
     if (pose.current) {
       const k = 1 - Math.exp(-dt * 12);
       const down = anim === 'fall';
-      pose.current.rotation.x += ((down ? -1.45 : 0) - pose.current.rotation.x) * k;
+      pose.current.rotation.x += ((down ? -1.45 : hitK * -0.4) - pose.current.rotation.x) * k;
+      pose.current.rotation.z = hitK * Math.sin(nowMs / 25) * 0.08;
       pose.current.position.y += ((down ? 0.3 : 0) - pose.current.position.y) * k;
     }
   });

@@ -318,6 +318,8 @@ export class CityRoom {
       this.quiz.set(m.treeId, (t = table));
     }
     const now = Date.now();
+    // Empty table: whoever sets it up or starts it becomes the host (solo play is fine).
+    if ((m.action === 'config' || m.action === 'start') && !t.hostId) t.join({ id: s.id, userId: s.player.userId, name: s.player.name });
     switch (m.action) {
       case 'watch': t.watchers.add(s.id); break;
       case 'unwatch':

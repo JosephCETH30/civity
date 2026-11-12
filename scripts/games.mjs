@@ -40,9 +40,10 @@ try {
     await P.getByRole('dialog', { name: 'Tree games' }).waitFor();
   }
   // ---------- quiz ----------
-  await A.getByRole('button', { name: 'Gabung kuis' }).click();
-  await B.getByRole('button', { name: 'Gabung kuis' }).click();
+  // A sets up the empty table without joining first (becomes host); B joins.
   await A.getByRole('button', { name: '5', exact: true }).click();
+  await A.getByText('Rina · host').waitFor();
+  await B.getByRole('button', { name: 'Gabung kuis' }).click();
   await A.getByLabel('Jumlah soal (custom)').fill('3');
   await A.getByLabel('Jumlah soal (custom)').press('Enter');
   await A.getByLabel('Waktu menjawab dalam detik (custom)').fill('12');
@@ -51,8 +52,8 @@ try {
   for (let i = 0; i < 40 && ((await val(B, 'Jumlah soal (custom)')) !== '3' || (await val(B, 'Waktu menjawab dalam detik (custom)')) !== '12'); i++) await B.waitForTimeout(150);
   if ((await val(B, 'Jumlah soal (custom)')) !== '3' || (await val(B, 'Waktu menjawab dalam detik (custom)')) !== '12') throw new Error('options did not sync: ' + (await val(B, 'Jumlah soal (custom)')) + ' ' + (await val(B, 'Waktu menjawab dalam detik (custom)')));
   step('host set 3 questions, 12 s each; the other player sees the options');
-  if (await B.getByRole('button', { name: 'Mulai kuis' }).count()) throw new Error('non-host can start');
-  await A.getByRole('button', { name: 'Mulai kuis' }).click();
+  if (await B.getByRole('button', { name: /^Mulai kuis/ }).count()) throw new Error('non-host can start');
+  await A.getByRole('button', { name: /^Mulai kuis/ }).click();
   for (let i = 1; i <= 3; i++) {
     await B.getByText(`Soal ${i} / 3`).waitFor({ timeout: 15000 });
     if (i === 1) await A.screenshot({ path: OUT + 'quiz-question.png' });
@@ -87,6 +88,16 @@ try {
   const score = await A.getByLabel('Battle scoreboard').innerText();
   if (!/1\/0/.test(score)) throw new Error('A has no kill on the scoreboard: ' + score);
   step('B respawned with 100 HP; A has 1 kill');
+  // First person (eyes) view with the blaster in hand; fire and capture the muzzle flash and tracer.
+  await A.getByRole('button', { name: 'First person (eyes)' }).click();
+  await A.waitForTimeout(800);
+  await A.keyboard.press('KeyF');
+  await A.waitForTimeout(40);
+  await A.screenshot({ path: OUT + 'battle-first-person.png' });
+  step('first-person view: fired with the blaster in hand');
+  // Studio download link serves the file as an attachment.
+  const dl = await fetch(BASE + '/api/studio/00000000-0000-0000-0000-000000000000/result?download');
+  if (dl.status !== 404) throw new Error('studio download route: ' + dl.status);
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('\nGAMES PASSED');
 } catch (e) {

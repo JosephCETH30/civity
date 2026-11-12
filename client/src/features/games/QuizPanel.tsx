@@ -119,6 +119,7 @@ function Lobby({ state, isHost, joined, send }: {
   send: (a: 'join' | 'start' | 'config', e?: { count?: number; seconds?: number; category?: QuizCategory }) => void;
 }) {
   const finished = state.phase === 'finished';
+  const canSetup = isHost || !state.hostId; // empty table: anyone can set it up and becomes host
   const winner = finished ? state.players[0] : undefined;
   return (
     <div className="space-y-4">
@@ -133,7 +134,7 @@ function Lobby({ state, isHost, joined, send }: {
       )}
       {!finished && <p className="text-sm text-muted-foreground">Kuis pengetahuan umum. {state.bankSize} soal tersedia di kategori ini; soal diacak setiap permainan.</p>}
 
-      <fieldset className="space-y-3" disabled={!isHost}>
+      <fieldset className="space-y-3" disabled={!canSetup}>
         <legend className="sr-only">Opsi kuis</legend>
         <Option label="Kategori">
           <select value={state.category} onChange={(e) => send('config', { category: e.target.value as QuizCategory })} className="h-8 rounded-md border bg-card px-2 text-sm" aria-label="Kategori">
@@ -152,8 +153,8 @@ function Lobby({ state, isHost, joined, send }: {
       {!isHost && joined && <p className="text-xs text-muted-foreground">Host yang mengatur opsi dan memulai kuis.</p>}
 
       <div className="flex flex-wrap gap-2">
-        {!joined && <Button onClick={() => send('join')}>Gabung kuis</Button>}
-        {isHost && <Button onClick={() => send('start')} disabled={!state.players.length}>{finished ? 'Main lagi' : 'Mulai kuis'}</Button>}
+        {canSetup && <Button onClick={() => send('start')}>{finished ? 'Main lagi' : state.players.length > 1 ? 'Mulai kuis' : 'Mulai kuis (main sendiri juga bisa)'}</Button>}
+        {!joined && <Button variant={canSetup ? 'secondary' : 'primary'} onClick={() => send('join')}>Gabung kuis</Button>}
       </div>
     </div>
   );

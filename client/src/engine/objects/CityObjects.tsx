@@ -2,7 +2,7 @@ import { memo, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import type { CityObject, ObjectType } from '@civitas/shared';
-import { DETAIL_TYPES, GEOMETRIES, objectMatrix, partMatrix, partsFor, roadJoins, tintFor, type Part, type RoadJoin } from './parts';
+import { GEOMETRIES, objectMatrix, partMatrix, partsFor, roadJoins, tintFor, type Part, type RoadJoin } from './parts';
 import { lamp, MATERIALS } from '../materials/materials';
 
 export { ghostMaterial } from '../materials/materials';
@@ -14,7 +14,6 @@ interface Props {
   objects: CityObject[];
   standardMaterial: boolean;
   shadows: boolean;
-  details: boolean;
   viewDistance: number;
   /** World units per culling chunk. Bigger chunks = fewer draw calls, less culling. */
   chunk: number;
@@ -22,13 +21,12 @@ interface Props {
 }
 
 /** All city objects drawn as instanced meshes grouped by (type, spatial chunk) for frustum and distance culling. */
-export function CityObjects({ objects, standardMaterial, shadows, details, viewDistance, chunk, onPick }: Props) {
+export function CityObjects({ objects, standardMaterial, shadows, viewDistance, chunk, onPick }: Props) {
   // Road tiles that touch another road sideways (junctions, turns, corners) lose their kerb on that side.
   const joins = useMemo(() => roadJoins(objects), [objects]);
   const groups = useMemo(() => {
     const map = new Map<string, { type: ObjectType; cx: number; cz: number; list: CityObject[] }>();
     for (const o of objects) {
-      if (!details && DETAIL_TYPES.includes(o.type)) continue;
       const single = chunk >= 1000; // one chunk for the whole world (low profile)
       const cx = single ? 0 : Math.floor(o.position.x / chunk), cz = single ? 0 : Math.floor(o.position.z / chunk);
       const key = `${o.type}|${cx}|${cz}`;
@@ -37,7 +35,7 @@ export function CityObjects({ objects, standardMaterial, shadows, details, viewD
       g.list.push(o);
     }
     return [...map.entries()];
-  }, [objects, details, chunk]);
+  }, [objects, chunk]);
   const set = standardMaterial ? MATERIALS.standard : MATERIALS.lambert;
 
   return (
