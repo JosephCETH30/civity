@@ -225,7 +225,17 @@ export function createApp(manager: RoomManager) {
   const paramsOk = (kind: string, p: { age?: number; year?: number; style?: string }) =>
     (kind === 'age' && p.age !== undefined) || (kind === 'era' && p.year !== undefined) || ((kind === 'restyle' || kind === 'custom') && !!p.style);
 
-  api.get('/studio/capabilities', (_req, res) => res.json(providers()));
+  // Cloudflare's free plan gives 10,000 neurons per day (resets 00:00 UTC). Measured: FLUX.2 Klein at ~1 MP costs
+  // about 110 neurons per image. shortcut: an estimate from our own render count, upgrade to Cloudflare's GraphQL
+  // analytics (needs an Account Analytics token) if exact numbers matter.
+  const FREE_NEURONS = 10_000, NEURONS_PER_IMAGE = 110;
+  api.get('/studio/capabilities', async (_req, res) => {
+    const caps = providers();
+    if (caps.image !== 'cloudflare') return res.json(caps);
+    const [{ n }] = await q(`select count(*)::int as n from studio_images where provider = 'cloudflare' and created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc'`);
+    const used = Math.min(FREE_NEURONS, n * NEURONS_PER_IMAGE);
+    res.json({ ...caps, credit: { used, limit: FREE_NEURONS, imagesLeft: Math.floor((FREE_NEURONS - used) / NEURONS_PER_IMAGE) } });
+  });
 
   // Stage 1: a vision model describes the photo and writes the edit instruction (shown to the user, editable).
   api.post('/rooms/:id/studio/analyse', requireUser, async (req, res) => {
@@ -259,8 +269,8 @@ export function createApp(manager: RoomManager) {
       // Re-edit of an earlier result: keep the link only when that image belongs to this room.
       const [parent] = body.parentId ? await q('select id from studio_images where id = $1 and room_id = $2', [body.parentId, room.id]) : [];
       const [row] = await q(
-        'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime, parent_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id, created_at',
-        [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime, parent?.id ?? null],
+        'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime, parent_id, provider) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id, created_at',
+        [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime, parent?.id ?? null, providers().image],
       );
       res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at, parentId: parent?.id ?? null, shared: false, mine: true });
     } catch (e) {

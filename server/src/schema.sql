@@ -162,3 +162,5 @@ alter table studio_images add column if not exists parent_id uuid references stu
 -- new ones start private.
 alter table studio_images add column if not exists shared boolean not null default true;
 alter table studio_images alter column shared set default false;
+-- Which image service made the result (for the free daily credit estimate).
+alter table studio_images add column if not exists provider text;

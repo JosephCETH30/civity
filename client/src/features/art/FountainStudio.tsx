@@ -12,7 +12,7 @@ import { Button } from '../../components/ui';
 import { cn } from '@/lib/utils';
 
 type Kind = 'age' | 'era' | 'restyle' | 'custom';
-interface Caps { text: string; vision: string; image: string }
+interface Caps { text: string; vision: string; image: string; credit?: { used: number; limit: number; imagesLeft: number } }
 interface Analysis { description: string; instruction: string; warnings: string[]; provider: string }
 interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string; parentId?: string | null; shared?: boolean; mine?: boolean }
 
@@ -99,6 +99,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
       const item = await api<Item>(`/rooms/${roomId}/studio/render`, { body: { image: photo, kind, params, instruction, description: analysis?.description || undefined, parentId: parentId ?? undefined } });
       setResult(item);
       setGallery((g) => [item, ...g]);
+      api<Caps>('/studio/capabilities').then(setCaps, () => {}); // refresh the credit counter
     } catch (err) { setError((err as Error).message); } finally { setBusy(null); }
   }
 
@@ -221,6 +222,11 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
             </li>
           ))}
         </ul>
+        {caps?.credit && (
+          <p className="pt-1 text-right text-[11px] tabular-nums text-muted-foreground" title="Cloudflare Workers AI free plan: 10,000 neurons per day, resets at 07:00 WIB (00:00 UTC). Estimated from images made today.">
+            Free AI credit today: ≈{(caps.credit.limit - caps.credit.used).toLocaleString()} / {caps.credit.limit.toLocaleString()} · ~{caps.credit.imagesLeft} images left
+          </p>
+        )}
       </aside>
     </div>
   );
