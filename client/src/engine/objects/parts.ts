@@ -305,13 +305,15 @@ export function partsFor(o: Pick<CityObject, 'type' | 'props'> & { id?: string }
 const _p = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _e = new THREE.Euler();
-const _y = new THREE.Vector3(0, 1, 0);
 const _pos = new THREE.Vector3();
 const _scl = new THREE.Vector3();
 
-/** World matrix of the object (position, Y rotation, scale). */
-export function objectMatrix(o: Pick<CityObject, 'position' | 'rotationY' | 'scale'>, out = new THREE.Matrix4()) {
-  _q.setFromAxisAngle(_y, o.rotationY);
+/**
+ * Model matrix of the object: M = T * R * S (scale first, then rotate, then move). Rotation order YXZ:
+ * yaw (Y) around the vertical, then tilt (X), then roll (Z), each in the object's own frame.
+ */
+export function objectMatrix(o: Pick<CityObject, 'position' | 'rotationY' | 'rotationX' | 'rotationZ' | 'scale'>, out = new THREE.Matrix4()) {
+  _q.setFromEuler(_e.set(o.rotationX ?? 0, o.rotationY, o.rotationZ ?? 0, 'YXZ'));
   return out.compose(_pos.set(o.position.x, o.position.y, o.position.z), _q, _scl.set(o.scale.x, o.scale.y, o.scale.z));
 }
 

@@ -40,6 +40,8 @@ const rowToObject = (r: any): CityObject => ({
   type: r.object_type,
   position: r.position,
   rotationY: r.rotation?.y ?? 0,
+  rotationX: r.rotation?.x ?? 0,
+  rotationZ: r.rotation?.z ?? 0,
   scale: r.scale,
   props: r.properties ?? {},
   createdBy: r.created_by,
@@ -471,7 +473,7 @@ export class CityRoom {
     const [row] = await q(
       `insert into city_objects (room_id, object_type, asset_id, position, rotation, scale, properties, created_by)
        values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
-      [this.meta.id, spec.type, spec.type, spec.position, { y: spec.rotationY }, spec.scale, spec.props, actor.userId],
+      [this.meta.id, spec.type, spec.type, spec.position, { x: spec.rotationX ?? 0, y: spec.rotationY, z: spec.rotationZ ?? 0 }, spec.scale, spec.props, actor.userId],
     );
     const obj = rowToObject(row);
     this.objects.set(obj.id, obj);
@@ -489,7 +491,7 @@ export class CityRoom {
     const spec = normalizeSpec(parsed.data, this.meta.worldSize);
     await q(
       `update city_objects set position=$3, rotation=$4, scale=$5, properties=$6, updated_at=now() where id=$1 and room_id=$2`,
-      [id, this.meta.id, spec.position, { y: spec.rotationY }, spec.scale, spec.props],
+      [id, this.meta.id, spec.position, { x: spec.rotationX ?? 0, y: spec.rotationY, z: spec.rotationZ ?? 0 }, spec.scale, spec.props],
     );
     const obj: CityObject = { ...spec, id, createdBy: cur.createdBy };
     this.objects.set(id, obj);

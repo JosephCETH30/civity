@@ -50,6 +50,7 @@ export function fire() {
   const stats = st.battle[me];
   if (!stats || stats.deadUntil > serverNow()) return;
   if (localPlayer.inside) return st.notify('No fighting indoors. Step outside first.');
+  if (localPlayer.car) return st.notify('Get out of the car to fire.');
   const nowMs = performance.now();
   if (nowMs - last < BATTLE.cooldownMs) return;
   last = nowMs;

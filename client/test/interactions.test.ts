@@ -109,3 +109,27 @@ test('a moving car knocks you down and out of its lane; a stopped one is just so
   assert.ok(Math.abs(localPlayer.x - 50) >= 0.95 + 0.35 - 1e-6 || Math.abs(localPlayer.z - 50) >= 2.2 + 0.35 - 1e-6, 'pushed out of the car body');
   trafficRef.current = null;
 });
+
+test('drive a car on a road: accelerate, steer, a building stops it, get out on the kerb side', () => {
+  const road = { ...defaultSpec('road', { x: 0, y: 0, z: 30 }), id: 'road', createdBy: null };
+  useWorld.getState().set({ objects: { house, bench, road } });
+  place(0, 30);
+  localPlayer.r = Math.PI; // facing -z, toward the house
+  assert.equal(ix.availableAction()?.label, 'Drive a car');
+  ix.interact();
+  assert.ok(localPlayer.car);
+  walk(0, -1, 1); // W: throttle
+  assert.ok(localPlayer.car!.v > 5, `accelerates, v=${localPlayer.car!.v}`);
+  assert.equal(localPlayer.a, 'drive');
+  walk(0, -1, 4); // keep going until the house (front wall at z=3)
+  assert.ok(localPlayer.z >= 3 + 1.1 - 1e-6, `stopped by the building, z=${localPlayer.z}`);
+  const r0 = localPlayer.r;
+  walk(0, -1, 0.5); walk(1, -1, 0.5); // throttle then steer right while moving
+  assert.ok(localPlayer.r < r0, 'right turn lowers the heading');
+  Object.assign(localPlayer.car!, { v: 0 });
+  assert.equal(ix.availableAction()?.label, 'Get out of the car');
+  ix.interact();
+  assert.equal(localPlayer.car, null);
+  assert.equal(localPlayer.a, 'idle');
+  useWorld.getState().set({ objects: { house, bench } });
+});

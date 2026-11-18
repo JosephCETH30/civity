@@ -145,10 +145,13 @@ test('five users share a room: presence, movement, edits, chat', async () => {
   await clients[4].wait('snap', (m) => m.players.some((p) => p[0] === inits[2].self.sessionId && p[1] === 82));
 
   // object placement is validated, snapped and broadcast
-  clients[1].send({ t: 'obj_add', spec: { type: 'office', position: { x: 10.4, y: 5, z: -3.6 }, rotationY: 0.1, scale: { x: 1, y: 1, z: 1 }, props: { floors: 10 } } });
+  clients[1].send({ t: 'obj_add', spec: { type: 'office', position: { x: 10.4, y: 5.04, z: -3.6 }, rotationY: 0.1, rotationX: 0.5, scale: { x: 1, y: 1, z: 1 }, props: { floors: 10 } } });
   const added = await clients[4].wait('obj_added', (m) => m.object.props.floors === 10);
-  assert.deepEqual(added.object.position, { x: 10, y: 0, z: -4 });
-  assert.equal(added.object.rotationY, 0);
+  // x/z snap to 1 m, y (lift) to 0.1 m; angles to whole degrees (0.1 rad = 5.7° -> 6°, 0.5 rad -> 29°)
+  assert.deepEqual(added.object.position, { x: 10, y: 5, z: -4 });
+  assert.ok(Math.abs(added.object.rotationY - (6 * Math.PI) / 180) < 1e-9);
+  assert.ok(Math.abs(added.object.rotationX! - (29 * Math.PI) / 180) < 1e-9);
+  assert.equal(added.object.rotationZ, 0);
 
   clients[2].send({ t: 'obj_update', id: added.object.id, patch: { rotationY: Math.PI / 2, props: { color: '#ff0000' } } });
   const upd = await clients[0].wait('obj_updated', (m) => m.object.id === added.object.id);

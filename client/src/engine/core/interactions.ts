@@ -7,6 +7,7 @@ import { ENTERABLE } from '../objects/parts';
 import { interiorFor, roomSize } from '../objects/interiors';
 import { input, localPlayer } from './transient';
 import { trafficRef } from '../simulation/traffic';
+import { undo } from '../../services/editor';
 
 const GRAVITY = -22;
 const JUMP_SPEED = 7;
@@ -31,6 +32,7 @@ let solids: { o: CityObject; f: Frame; hw: number; hd: number }[] = [];
 let benches: Seat[] = [];
 let parks: { o: CityObject; f: Frame; hw: number; hd: number }[] = [];
 let trees: CityObject[] = [];
+let roads: Frame[] = [];
 function ensureCache() {
   const objects = useWorld.getState().objects;
   if (objects === cacheFor) return;
@@ -39,7 +41,9 @@ function ensureCache() {
   benches = [];
   parks = [];
   trees = [];
+  roads = [];
   for (const o of Object.values(objects)) {
+    if (o.type === 'road') roads.push(frameOf(o));
     const f = frameOf(o);
     if (ENTERABLE.includes(o.type)) {
       const [w, d] = OBJECT_INFO[o.type].footprint;
@@ -85,6 +89,7 @@ export function availableAction(): Action | null {
   ensureCache();
   const p = localPlayer;
   if (p.fallUntil > now()) return null;
+  if (p.car) return { label: 'Get out of the car', run: exitCar };
   if (p.seat) return { label: 'Stand up', run: standUp };
   const inside = currentBuilding();
   if (inside) {
@@ -124,7 +129,21 @@ export function availableAction(): Action | null {
     const o = best.o;
     return { label: `Enter ${o.props.name || OBJECT_INFO[o.type].label.toLowerCase()}`, run: () => enterBuilding(o) };
   }
+  // On a road: take a car and drive among the traffic.
+  if (roads.some((f) => { const l = toLocal(f, p.x, p.z); return Math.abs(l.lx) <= 4 && Math.abs(l.lz) <= 4; })) {
+    return { label: 'Drive a car', run: enterCar };
+  }
   return null;
+}
+
+function enterCar() {
+  Object.assign(localPlayer, { car: { v: 0 }, seat: null, vy: 0, y: 0, a: 'drive', moved: true });
+}
+function exitCar() {
+  const p = localPlayer;
+  // Step out on the kerb side (left-hand traffic: the car's left).
+  const out = collideBuildings(p.x + Math.cos(p.r) * 1.7, p.z - Math.sin(p.r) * 1.7);
+  Object.assign(p, { car: null, x: out.x, z: out.z, a: 'idle', moved: true });
 }
 
 function nearestSeat(seats: Seat[]) {
@@ -164,13 +183,13 @@ export function resetPlayerState() {
 export function interact() { availableAction()?.run(); }
 export function jump() {
   const p = localPlayer;
-  if (p.fallUntil > now()) return;
+  if (p.fallUntil > now() || p.car) return;
   if (p.seat) return standUp();
   const floor = p.inside ? INTERIOR_DEPTH : 0;
   if (p.y <= floor + 0.001) p.vy = JUMP_SPEED;
 }
 export function wave() {
-  if (!localPlayer.seat) localPlayer.waveUntil = now() + 2200;
+  if (!localPlayer.seat && !localPlayer.car) localPlayer.waveUntil = now() + 2200;
 }
 
 // ---------- keyboard ----------
@@ -192,6 +211,7 @@ export function bindKeyboard() {
     if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) jump(); return; }
     if (e.code === 'KeyE' && !e.repeat) return interact();
     if (e.code === 'KeyQ' && !e.repeat) return wave();
+    if (e.code === 'KeyZ' && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); return undo(); }
     keys.add(e.code);
     recompute();
   };
@@ -225,6 +245,8 @@ export function stepLocalPlayer(dt: number, yaw: number, worldSize: number) {
     if (moving) standUp();
     else return;
   }
+
+  if (p.car) return driveStep(dt, ix, iz, worldSize);
 
   const down = p.fallUntil > now();
   if (down) {
@@ -277,11 +299,11 @@ export function stepLocalPlayer(dt: number, yaw: number, worldSize: number) {
 }
 
 /** Buildings are solid: push a point out along the shallowest axis of any oriented box it is inside. */
-function collideBuildings(x: number, z: number) {
+function collideBuildings(x: number, z: number, radius = RADIUS) {
   for (const s of solids) {
-    if (Math.abs(x - s.f.cx) > s.hw + s.hd + 2 || Math.abs(z - s.f.cz) > s.hw + s.hd + 2) continue;
+    if (Math.abs(x - s.f.cx) > s.hw + s.hd + 2 + radius || Math.abs(z - s.f.cz) > s.hw + s.hd + 2 + radius) continue;
     const l = toLocal(s.f, x, z);
-    const px = s.hw + RADIUS - Math.abs(l.lx), pz = s.hd + RADIUS - Math.abs(l.lz);
+    const px = s.hw + radius - Math.abs(l.lx), pz = s.hd + radius - Math.abs(l.lz);
     if (px <= 0 || pz <= 0) continue;
     if (px < pz) l.lx += Math.sign(l.lx || 1) * px;
     else l.lz += Math.sign(l.lz || 1) * pz;
@@ -323,4 +345,46 @@ function collideVehicles(alreadyDown: boolean) {
     if (ps < pa) { const d = Math.sign(side || 1) * ps; p.x += fz * d; p.z -= fx * d; }
     else { const d = Math.sign(along || 1) * pa; p.x += fx * d; p.z += fz * d; }
   }
+}
+
+
+// ---------- driving ----------
+const CAR_RADIUS = 1.1; // the player's car as a circle for collisions (CAR is 4.4 x 1.9 m)
+
+/**
+ * Arcade car: W/S (or joystick up/down) accelerate, brake and reverse; A/D steer, more effectively at speed;
+ * Shift for a higher top speed. Buildings and traffic are solid: hitting them bumps the car back.
+ */
+function driveStep(dt: number, ix: number, iz: number, worldSize: number) {
+  const p = localPlayer, car = p.car!;
+  const throttle = -iz, steer = ix;
+  if (throttle > 0) car.v += (car.v < 0 ? 16 : 9) * throttle * dt;
+  else if (throttle < 0) car.v += (car.v > 0.5 ? 16 : 5) * throttle * dt;
+  else car.v -= Math.sign(car.v) * Math.min(Math.abs(car.v), 3 * dt); // coasting
+  car.v -= car.v * 0.25 * dt; // drag
+  car.v = Math.max(-6, Math.min(input.run ? 22 : 15, car.v));
+  // Turning right lowers the heading; reversing turns the other way, like a real car.
+  p.r -= steer * 1.7 * Math.min(1, Math.abs(car.v) / 6) * Math.sign(car.v) * dt;
+  const half = worldSize / 2;
+  let nx = p.x + Math.sin(p.r) * car.v * dt, nz = p.z + Math.cos(p.r) * car.v * dt;
+  const pushed = collideBuildings(nx, nz, CAR_RADIUS);
+  if (pushed.x !== nx || pushed.z !== nz) car.v *= -0.25; // bumped a building
+  nx = Math.max(-half, Math.min(half, pushed.x));
+  nz = Math.max(-half, Math.min(half, pushed.z));
+  const sys = trafficRef.current;
+  if (sys) {
+    for (const v of sys.vehicles) {
+      const pose = sys.pose(v);
+      if (pose.scale < 0.5) continue;
+      const dx = nx - pose.x, dz = nz - pose.z, d = Math.hypot(dx, dz), min = CAR_RADIUS + v.w / 2 + (v.len - v.w) / 4;
+      if (d < min && d > 1e-3) {
+        nx = pose.x + (dx / d) * min; nz = pose.z + (dz / d) * min;
+        if (Math.abs(car.v) > 3) { p.hitAt = now(); useWorld.getState().notify('Bump! Mind the traffic.'); }
+        car.v *= -0.2;
+      }
+    }
+  }
+  p.x = nx; p.z = nz; p.y = 0; p.vy = 0;
+  p.a = 'drive';
+  p.moved = true;
 }

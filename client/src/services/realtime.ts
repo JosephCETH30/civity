@@ -5,6 +5,7 @@ import { useWorld } from '../stores/world';
 import { battleFx, bursts, fxHitAt, fxShotAt, localPlayer, remoteRendered, remoteTargets, shots } from '../engine/core/transient';
 import { falloff, playHit, playKill, playShot } from '../engine/combat/sfx';
 import { playerNow } from '../engine/core/interactions';
+import { onObjectAdded, resetUndo } from './editor';
 import { tokenStore } from './api';
 
 const SEND_HZ = 10;
@@ -102,6 +103,7 @@ class RealtimeClient {
         }
         const me = m.players.find((p) => p.id === m.self.sessionId);
         // Keep our position across reconnects; use the server spawn on first join.
+        if (!this.spawned) resetUndo(); // a new room: earlier undo history does not apply
         if (me && !this.spawned) Object.assign(localPlayer, { x: me.p[0], y: 0, z: me.p[2], r: 0, vy: 0, inside: null, seat: null, waveUntil: 0, moved: true });
         localPlayer.moved = true;
         st.set({
@@ -159,6 +161,7 @@ class RealtimeClient {
       case 'obj_added':
       case 'obj_updated':
         st.set({ objects: { ...st.objects, [m.object.id]: m.object } });
+        if (m.t === 'obj_added') onObjectAdded(m.object);
         break;
       case 'obj_deleted': {
         const { [m.id]: _, ...rest } = st.objects;

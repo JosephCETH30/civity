@@ -5,6 +5,7 @@ import { defaultSpec, OBJECT_INFO, type CityObject } from '@civitas/shared';
 import { canEditNow, useWorld } from '../../stores/world';
 import { useMedia } from '../../features/communication/mediaStore';
 import { realtime } from '../../services/realtime';
+import { addObject } from '../../services/editor';
 import { localPlayer, remoteRendered, remoteTargets } from '../core/transient';
 import { bindKeyboard, stepLocalPlayer } from '../core/interactions';
 import { partsFor } from '../objects/parts';
@@ -93,7 +94,7 @@ export default function Map2D() {
       const st = useWorld.getState();
       if (st.tool.kind === 'place') {
         if (!canEditNow()) return st.notify('You do not have edit permission', 'error');
-        return realtime.send({ t: 'obj_add', spec: defaultSpec(st.tool.type, { x: w.x, y: 0, z: w.z }) });
+        return addObject(defaultSpec(st.tool.type, { x: w.x, y: 0, z: w.z }));
       }
       const hit = pick(Object.values(st.objects), w.x, w.z);
       if (st.tool.kind === 'route') {

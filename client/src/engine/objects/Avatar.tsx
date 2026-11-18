@@ -7,6 +7,7 @@ import type { AnimState } from '@civitas/shared';
 import { fxHitAt, fxShotAt, localPlayer, remoteRendered, remoteTargets } from '../core/transient';
 import { lamp } from '../materials/materials';
 import { merged } from './merge';
+import { carLights, carPaint, carTrim, lightsMat, trimMat } from '../simulation/Transit';
 
 // "Citizen": original stylised city dweller, 1.9 m tall, built from primitives.
 // 12 meshes, one per moving segment. Parts that move together are merged into one geometry with vertex colours,
@@ -120,6 +121,9 @@ const speakMat = new THREE.MeshBasicMaterial({ color: '#16a34a', transparent: tr
 const hpBack = new THREE.SpriteMaterial({ color: '#111111', opacity: 0.75, transparent: true, depthWrite: false });
 const hpMats = { high: new THREE.SpriteMaterial({ color: '#22c55e', depthWrite: false }), mid: new THREE.SpriteMaterial({ color: '#eab308', depthWrite: false }), low: new THREE.SpriteMaterial({ color: '#ef4444', depthWrite: false }) };
 const _v = new THREE.Vector3();
+// A driving player is drawn as a car in their own colour (same model as the traffic).
+const carPaints = new Map<string, THREE.Material>();
+const carPaintMat = (c: string) => { let m = carPaints.get(c); if (!m) carPaints.set(c, (m = new THREE.MeshLambertMaterial({ color: c }))); return m; };
 
 
 /**
@@ -162,6 +166,8 @@ const damp = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
 export function Avatar({ sessionId, name, color, seed, speaking, showLabel, lite, armed, hp }: Props) {
   const g = useRef<THREE.Group>(null);
   const pose = useRef<THREE.Group>(null);
+  const body = useRef<THREE.Group>(null);
+  const car = useRef<THREE.Group>(null);
   const upper = useRef<THREE.Group>(null);
   const torso = useRef<THREE.Mesh>(null);
   const hem = useRef<THREE.Group>(null);
@@ -211,6 +217,10 @@ export function Avatar({ sessionId, name, color, seed, speaking, showLabel, lite
     if (anim !== s.prevAnim) { if (s.prevAnim === 'jump') s.landT = 0; s.prevAnim = anim; s.animT = 0; }
     s.animT += dt;
     s.landT += dt;
+    const driving = anim === 'drive';
+    if (car.current) car.current.visible = driving;
+    if (body.current) body.current.visible = !driving;
+    if (driving) { if (pose.current) { pose.current.rotation.set(0, 0, 0); pose.current.position.y = 0; pose.current.scale.set(1, 1, 1); } return; }
     if (custom) return; // the GLB plays its own clips
 
     const walking = anim === 'walk';
@@ -339,8 +349,13 @@ export function Avatar({ sessionId, name, color, seed, speaking, showLabel, lite
 
   return (
     <group ref={g}>
+      <group ref={car} visible={false}>
+        <mesh geometry={carPaint} material={carPaintMat(color)} castShadow={shadow} />
+        <mesh geometry={carTrim} material={trimMat} />
+        <mesh geometry={carLights} material={lightsMat} />
+      </group>
       <group ref={pose}>
-        {custom ? <Suspense fallback={procedural}><CustomBody anim={animRef} /></Suspense> : procedural}
+        <group ref={body}>{custom ? <Suspense fallback={procedural}><CustomBody anim={animRef} /></Suspense> : procedural}</group>
         {custom && armed && (
           <group position={[0.3, 1.3, 0.3]}>
             <mesh geometry={blasterGeo} material={citizenMat} />

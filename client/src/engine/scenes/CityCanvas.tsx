@@ -6,6 +6,7 @@ import { defaultSpec, normalizeSpec, OBJECT_INFO, type CityObject } from '@civit
 import { canEditNow, savePref, useWorld } from '../../stores/world';
 import { useMedia } from '../../features/communication/mediaStore';
 import { realtime } from '../../services/realtime';
+import { addObject, updateObject } from '../../services/editor';
 import { ghost, localPlayer, perf } from '../core/transient';
 import { bindKeyboard } from '../core/interactions';
 import { CityObjects, ghostMaterial, SingleObject } from '../objects/CityObjects';
@@ -93,7 +94,7 @@ function Scene() {
     if (st.inBattle && st.tool.kind === 'select') return; // clicks fire the blaster instead
     if (st.tool.kind === 'place') {
       if (!canEditNow()) return st.notify('You do not have edit permission', 'error');
-      return realtime.send({ t: 'obj_add', spec: defaultSpec(st.tool.type, { x: e.point.x, y: 0, z: e.point.z }) });
+      return addObject(defaultSpec(st.tool.type, { x: e.point.x, y: 0, z: e.point.z }));
     }
     if (st.tool.kind === 'route') {
       if (st.objects[id]?.type !== 'bus_stop') return st.notify('Pick bus stops to build a route');
@@ -116,7 +117,7 @@ function Scene() {
     if (st.tool.kind !== 'place') return;
     if (!canEditNow()) return st.notify('You do not have edit permission', 'error');
     e.stopPropagation();
-    realtime.send({ t: 'obj_add', spec: defaultSpec(st.tool.type, { x: e.point.x, y: 0, z: e.point.z }) });
+    addObject(defaultSpec(st.tool.type, { x: e.point.x, y: 0, z: e.point.z }));
   };
 
   return (
@@ -176,13 +177,13 @@ function SelectedObject({ object, standard }: { object: CityObject; standard: bo
 
   const commit = () => {
     if (!target) return;
-    const yaw = new THREE.Euler().setFromQuaternion(target.quaternion, 'YXZ').y;
+    const e = new THREE.Euler().setFromQuaternion(target.quaternion, 'YXZ');
     const patch = {
-      position: { x: target.position.x, y: 0, z: target.position.z },
-      rotationY: yaw,
+      position: { x: target.position.x, y: Math.max(0, target.position.y), z: target.position.z },
+      rotationX: e.x, rotationY: e.y, rotationZ: e.z,
       scale: { x: clampScale(target.scale.x), y: clampScale(target.scale.y), z: clampScale(target.scale.z) },
     };
-    realtime.send({ t: 'obj_update', id: object.id, patch });
+    updateObject(object, patch);
   };
 
   return (
@@ -201,9 +202,9 @@ function SelectedObject({ object, standard }: { object: CityObject; standard: bo
           translationSnap={1}
           rotationSnap={Math.PI / 12}
           scaleSnap={0.25}
-          showY={mode !== 'translate'}
-          showX={mode !== 'rotate'}
-          showZ={mode !== 'rotate'}
+          showX
+          showY
+          showZ
           onMouseUp={commit}
         />
       )}

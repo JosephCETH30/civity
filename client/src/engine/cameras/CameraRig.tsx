@@ -78,10 +78,13 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
     const dt = Math.min(rawDt, 0.1);
     if (mode === 'first') {
       stepLocalPlayer(dt, view.yaw, worldSize);
-      // Body faces where you look; the eyes ride on the body (lower when seated or knocked down).
-      const r = view.yaw + Math.PI;
-      if (Math.abs(r - localPlayer.r) > 1e-3 && localPlayer.a !== 'sit') { localPlayer.r = r; localPlayer.moved = true; }
-      const eye = localPlayer.a === 'sit' ? 1.2 : localPlayer.a === 'fall' ? 0.45 : 1.68;
+      if (localPlayer.car) view.yaw = localPlayer.r + Math.PI; // driving: look where the car points
+      else {
+        // Body faces where you look; the eyes ride on the body (lower when seated or knocked down).
+        const r = view.yaw + Math.PI;
+        if (Math.abs(r - localPlayer.r) > 1e-3 && localPlayer.a !== 'sit') { localPlayer.r = r; localPlayer.moved = true; }
+      }
+      const eye = localPlayer.a === 'sit' ? 1.2 : localPlayer.a === 'fall' ? 0.45 : localPlayer.car ? 1.3 : 1.68;
       camera.position.set(localPlayer.x, localPlayer.y + eye, localPlayer.z);
       battleFx.recoil *= Math.exp(-dt * 14);
       camera.rotation.set(view.pitch + battleFx.recoil, view.yaw, 0, 'YXZ');
@@ -91,7 +94,7 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
       return;
     }
     stepLocalPlayer(dt, c.getAzimuthalAngle(), worldSize);
-    if (mode === 'third' && localPlayer.a === 'walk' && !drag.current.active && performance.now() - drag.current.endedAt > 700) {
+    if (mode === 'third' && (localPlayer.a === 'walk' || (localPlayer.a === 'drive' && Math.abs(localPlayer.car?.v ?? 0) > 1)) && !drag.current.active && performance.now() - drag.current.endedAt > 700) {
       const cur = c.getAzimuthalAngle();
       const behind = localPlayer.r + Math.PI;
       const delta = Math.atan2(Math.sin(behind - cur), Math.cos(behind - cur));

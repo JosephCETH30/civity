@@ -40,6 +40,8 @@ interface WorldState {
   inBattle: boolean;
   battle: Record<string, BattleStats>;
   killFeed: { id: number; text: string }[];
+  /** How many of my city edits can be undone. */
+  undoCount: number;
   tool: Tool;
   transformMode: 'translate' | 'rotate' | 'scale';
   cameraMode: CameraMode;
@@ -75,6 +77,7 @@ const initial = () => ({
   inBattle: false,
   battle: {} as Record<string, BattleStats>,
   killFeed: [] as { id: number; text: string }[],
+  undoCount: 0,
   tool: { kind: 'select' } as Tool,
 });
 

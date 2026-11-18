@@ -132,6 +132,10 @@ export const objectSpecSchema = z.object({
   type: z.enum(OBJECT_TYPES),
   position: vec3Schema,
   rotationY: finite,
+  // Tilt (pitch) and roll, radians. Optional so older objects, templates and AI output stay valid. Visual only:
+  // collisions, traffic and interiors keep using the upright footprint.
+  rotationX: finite.optional(),
+  rotationZ: finite.optional(),
   scale: z.object({ x: z.number().min(0.25).max(4), y: z.number().min(0.25).max(4), z: z.number().min(0.25).max(4) }),
   props: objectPropsSchema,
 });
@@ -142,16 +146,26 @@ export interface CityObject extends ObjectSpec {
 }
 export const objectPatchSchema = objectSpecSchema.omit({ type: true }).partial();
 
+export const MAX_HEIGHT = 60; // highest an object may be lifted (position.y, metres)
+const DEG = Math.PI / 180;
+/** Angle wrapped to [0, 2π) (yaw) or (-π, π] (tilt/roll), in whole degrees. */
+const wrap = (a: number, signed: boolean) => {
+  let r = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  if (signed && r > Math.PI) r -= Math.PI * 2;
+  return Math.round(r / DEG) * DEG;
+};
+
 /** Snap to grid, clamp into the world, quantize rotation. Server applies it authoritatively; client uses it for previews. */
 export function normalizeSpec(spec: ObjectSpec, worldSize: number): ObjectSpec {
   const half = worldSize / 2;
   const clamp = (v: number) => Math.max(-half, Math.min(half, v));
   const snap = (v: number) => Math.round(v);
-  const r = ((spec.rotationY % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   return {
     ...spec,
-    position: { x: clamp(snap(spec.position.x)), y: 0, z: clamp(snap(spec.position.z)) },
-    rotationY: Math.round(r / (Math.PI / 12)) * (Math.PI / 12), // 15° steps
+    position: { x: clamp(snap(spec.position.x)), y: Math.max(0, Math.min(MAX_HEIGHT, Math.round(spec.position.y * 10) / 10)), z: clamp(snap(spec.position.z)) },
+    rotationY: wrap(spec.rotationY, false), // whole degrees (the gizmo and buttons step 15°)
+    rotationX: wrap(spec.rotationX ?? 0, true),
+    rotationZ: wrap(spec.rotationZ ?? 0, true),
     scale: { x: +spec.scale.x.toFixed(2), y: +spec.scale.y.toFixed(2), z: +spec.scale.z.toFixed(2) },
   };
 }
@@ -209,7 +223,7 @@ export const simElapsed = (s: SimState, now: number) =>
 export const simHour = (s: SimState, now: number) => (((s.timeOfDay + simElapsed(s, now) / 60) % 24) + 24) % 24;
 
 // ---------- Realtime wire protocol ----------
-export const ANIM_STATES = ['idle', 'walk', 'jump', 'sit', 'wave', 'fall'] as const;
+export const ANIM_STATES = ['idle', 'walk', 'jump', 'sit', 'wave', 'fall', 'drive'] as const;
 export type AnimState = (typeof ANIM_STATES)[number];
 export interface PlayerState {
   id: string; // session id

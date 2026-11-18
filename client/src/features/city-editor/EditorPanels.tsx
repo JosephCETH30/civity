@@ -1,7 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { BUILDING_TYPES, OBJECT_INFO, OBJECT_TYPES, PLACEABLE_TYPES, STYLES, type CityObject, type ObjectSpec, type ObjectType } from '@civitas/shared';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { BUILDING_TYPES, MAX_HEIGHT, OBJECT_INFO, OBJECT_TYPES, PLACEABLE_TYPES, STYLES, type CityObject, type ObjectSpec, type ObjectType } from '@civitas/shared';
+import { objectMatrix } from '../../engine/objects/parts';
 import { useWorld } from '../../stores/world';
 import { realtime } from '../../services/realtime';
+import { deleteObject, undo, updateObject } from '../../services/editor';
 import { Button, Input, Select } from '../../components/ui';
 import { cn } from '@/lib/utils';
 import { AssetIcon } from './AssetIcon';
@@ -124,6 +126,7 @@ export function PropertiesPanel() {
   const mode = useWorld((s) => s.transformMode);
   const set = useWorld((s) => s.set);
   const canEdit = useCanEdit();
+  const undoCount = useWorld((s) => s.undoCount);
   if (!obj) {
     return (
       <div className="px-1 py-6 text-center text-sm text-muted-foreground">
@@ -133,8 +136,8 @@ export function PropertiesPanel() {
   }
   const info = OBJECT_INFO[obj.type];
   const isBuilding = BUILDING_TYPES.includes(obj.type);
-  const update = (patch: Partial<Omit<ObjectSpec, 'type'>>) => realtime.send({ t: 'obj_update', id: obj.id, patch });
-  const nudge = (dx: number, dz: number) => update({ position: { x: obj.position.x + dx, y: 0, z: obj.position.z + dz } });
+  const update = (patch: Partial<Omit<ObjectSpec, 'type'>>) => updateObject(obj, patch);
+  const nudge = (dx: number, dz: number) => update({ position: { x: obj.position.x + dx, y: obj.position.y, z: obj.position.z + dz } });
 
   return (
     <div className="space-y-4 text-sm">
@@ -185,9 +188,11 @@ export function PropertiesPanel() {
             </Row>
             <Row label={`Scale ${obj.scale.x}×`}>
               <input type="range" min={0.25} max={4} step={0.25} value={obj.scale.x} className="w-full accent-[var(--primary)]"
-                onChange={(e) => { const v = +e.target.value; update({ scale: { x: v, y: v, z: v } }); }} />
+                onChange={(e) => { const v = +e.target.value; update({ scale: { x: v, y: v, z: v } }); }} aria-label="Uniform scale" />
             </Row>
           </div>
+
+          <TransformEditor obj={obj} update={update} />
 
           <div className="space-y-2 border-t pt-4">
             <div className="hidden rounded-md bg-muted p-0.5 md:flex" role="group" aria-label="Gizmo mode">
@@ -206,12 +211,82 @@ export function PropertiesPanel() {
               <Button variant="secondary" size="sm" onClick={() => nudge(1, 0)} aria-label="Move east">→</Button>
             </div>
           </div>
-          <button className="w-full rounded-md py-2 text-sm font-medium text-destructive hover:bg-destructive/8" onClick={() => realtime.send({ t: 'obj_delete', id: obj.id })}>
-            Delete object
-          </button>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" className="flex-1" disabled={!undoCount} onClick={undo} title="Undo my last change (Ctrl/Cmd+Z)">Undo{undoCount ? ` (${undoCount})` : ''}</Button>
+            <button className="flex-1 rounded-md py-2 text-sm font-medium text-destructive hover:bg-destructive/8" onClick={() => deleteObject(obj)}>
+              Delete object
+            </button>
+          </div>
         </>
       )}
     </div>
+  );
+}
+
+const RAD = 180 / Math.PI;
+type Patch = Partial<Omit<ObjectSpec, 'type'>>;
+
+/**
+ * The object's full 3D transform, for teaching: position (translate), rotation (degrees, applied yaw Y, then tilt X,
+ * then roll Z) and scale per axis, plus the 4x4 model matrix M = T * R * S the GPU multiplies every vertex by.
+ */
+function TransformEditor({ obj, update }: { obj: CityObject; update: (p: Patch) => void }) {
+  const p = obj.position, s = obj.scale;
+  const rot = { x: (obj.rotationX ?? 0) * RAD, y: obj.rotationY * RAD, z: (obj.rotationZ ?? 0) * RAD };
+  const m = objectMatrix(obj).elements; // column-major
+  const axes = ['x', 'y', 'z'] as const;
+  return (
+    <section className="space-y-2 border-t pt-4" aria-label="Transform">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Transform</h4>
+      <AxisRow label="Position (m)" values={[p.x, p.y, p.z]} step={1}
+        onCommit={(i, v) => update({ position: { ...p, [axes[i]]: i === 1 ? Math.max(0, Math.min(MAX_HEIGHT, v)) : v } })} />
+      <AxisRow label="Rotation (°)" values={[rot.x, rot.y, rot.z]} step={15}
+        onCommit={(i, v) => update(i === 0 ? { rotationX: v / RAD } : i === 1 ? { rotationY: v / RAD } : { rotationZ: v / RAD })} />
+      <AxisRow label="Scale (×)" values={[s.x, s.y, s.z]} step={0.25}
+        onCommit={(i, v) => update({ scale: { ...s, [axes[i]]: Math.max(0.25, Math.min(4, v)) } })} />
+      <details className="rounded-md bg-muted/60 px-2.5 py-2">
+        <summary className="cursor-pointer text-xs font-medium">Model matrix M = T · R · S</summary>
+        <table className="mt-2 w-full table-fixed font-mono text-[11px] tabular-nums" aria-label="4 by 4 model matrix">
+          <tbody>
+            {[0, 1, 2, 3].map((r) => (
+              <tr key={r}>{[0, 1, 2, 3].map((c) => <td key={c} className={cn('px-0.5 text-right', c === 3 && r < 3 && 'font-semibold text-foreground')}>{m[c * 4 + r].toFixed(2)}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">Each vertex v of the model is drawn at M · v. The last column is the position (T); the top-left 3×3 holds rotation × scale (R · S).</p>
+      </details>
+    </section>
+  );
+}
+
+function AxisRow({ label, values, step, onCommit }: { label: string; values: [number, number, number]; step: number; onCommit: (axis: number, v: number) => void }) {
+  return (
+    <div>
+      <div className="mb-1 text-xs text-muted-foreground">{label}</div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {values.map((v, i) => <AxisInput key={i} label={label} axis={'XYZ'[i]} value={v} step={step} onCommit={(n) => onCommit(i, n)} />)}
+      </div>
+    </div>
+  );
+}
+
+/** Number box that edits locally and commits on Enter or blur (so typing "-1" does not send "-"). */
+function AxisInput({ label, axis, value, step, onCommit }: { label: string; axis: string; value: number; step: number; onCommit: (v: number) => void }) {
+  const shown = String(+value.toFixed(2));
+  const [draft, setDraft] = useState(shown);
+  useEffect(() => setDraft(shown), [shown]);
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n) || +n.toFixed(2) === +value.toFixed(2)) return setDraft(shown);
+    onCommit(n);
+  };
+  const color = axis === 'X' ? 'text-red-600' : axis === 'Y' ? 'text-green-600' : 'text-blue-600';
+  return (
+    <label className="flex h-8 items-center gap-1 rounded-md border bg-card px-1.5 text-xs">
+      <span className={cn('font-semibold', color)}>{axis}</span>
+      <input type="number" step={step} value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()} className="w-full min-w-0 bg-transparent tabular-nums outline-none" aria-label={`${label} ${axis}`} />
+    </label>
   );
 }
 

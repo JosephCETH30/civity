@@ -49,13 +49,13 @@ const sideWheels = (xs: number, zs: number[], r: number, y: number) =>
     { geo: wheel(r, 0.24), color: TYRE, pos: [sx * xs, y, z] as [number, number, number], rot: [0, 0, Math.PI / 2] as [number, number, number] },
     { geo: wheel(r * 0.5, 0.26, 6), color: HUB, pos: [sx * xs, y, z] as [number, number, number], rot: [0, 0, Math.PI / 2] as [number, number, number] },
   ]));
-const carPaint = merged([
+export const carPaint = merged([
   { geo: box(1.86, 0.55, 3.9), color: '#ffffff', pos: [0, 0.6, 0] },
   { geo: box(1.74, 0.42, 0.26), color: '#ffffff', pos: [0, 0.55, 2.06] }, // rounded-looking nose
   { geo: box(1.76, 0.5, 0.2), color: '#ffffff', pos: [0, 0.6, -2.05] },
   { geo: box(1.58, 0.08, 1.55), color: '#ffffff', pos: [0, 1.46, -0.3] }, // roof over the cabin
 ]);
-const carTrim = merged([
+export const carTrim = merged([
   { geo: box(1.6, 0.56, 1.55), color: GLASS, pos: [0, 1.15, -0.3] },
   { geo: box(1.56, 0.05, 0.82), color: GLASS, pos: [0, 1.15, 0.78], rot: [0.74, 0, 0] }, // sloped windscreen
   { geo: box(1.56, 0.05, 0.6), color: GLASS, pos: [0, 1.2, -1.32], rot: [2.27, 0, 0] }, // rear glass
@@ -63,7 +63,7 @@ const carTrim = merged([
   { geo: box(1.9, 0.12, 0.12), color: '#3a3e44', pos: [0, 0.42, -2.12] },
   ...sideWheels(0.84, [1.35, -1.35], 0.33, 0.33),
 ]);
-const carLights = merged([
+export const carLights = merged([
   { geo: box(0.36, 0.14, 0.06), color: '#fff1c9', pos: [-0.6, 0.66, 2.2] },
   { geo: box(0.36, 0.14, 0.06), color: '#fff1c9', pos: [0.6, 0.66, 2.2] },
   { geo: box(0.34, 0.12, 0.06), color: '#e0322b', pos: [-0.62, 0.72, -2.17] },
@@ -87,9 +87,9 @@ const busLights = merged([
   { geo: box(1.8, 0.32, 0.06), color: '#ffc95e', pos: [0, 2.58, 3.58] }, // blank destination panel
 ]);
 const paintMat = new THREE.MeshLambertMaterial({ color: 'white' });
-const trimMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+export const trimMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 // Lights are unlit colours: soft by day, bright at night (driven by the scene's night factor).
-const lightsMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
+export const lightsMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
 const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, 3, 6).translate(0, 1.5, 0);
 const headGeo = new THREE.BoxGeometry(0.32, 0.8, 0.32).translate(0, 3.2, 0);
 const poleMat = new THREE.MeshLambertMaterial({ color: '#2f3236' });

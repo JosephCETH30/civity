@@ -20,6 +20,7 @@ export const localPlayer = {
   fallUntil: 0, // knocked down by a vehicle until this time
   hitAt: 0, // when the last hit happened (camera shake)
   kx: 0, kz: 0, // knock-back velocity
+  car: null as { v: number } | null, // driving: speed in m/s along the heading r
 };
 
 /** Movement input in [-1, 1]; written by keyboard and on-screen joystick. */

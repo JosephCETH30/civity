@@ -8,6 +8,7 @@ import { defaultSpec } from '@civitas/shared';
 import { useWorld } from '../../stores/world';
 import { api } from '../../services/api';
 import { realtime } from '../../services/realtime';
+import { addObject } from '../../services/editor';
 import { localPlayer } from '../../engine/core/transient';
 import { estimateDepth, preparePhoto } from '../../engine/ai/depth';
 import { ReliefMesh } from '../../engine/objects/ArtworkReliefs';
@@ -61,7 +62,7 @@ export function PhotoStudio() {
       const spec = defaultSpec('artwork', { x, y: 0, z });
       spec.rotationY = localPlayer.r + Math.PI;
       spec.props = { assetId: id, depthScale, cutout, aspect: Math.min(5, Math.max(0.2, stage.aspect)) };
-      realtime.send({ t: 'obj_add', spec });
+      addObject(spec);
       useWorld.getState().notify('Sculpture placed in the park');
       close();
     } catch (err) {
