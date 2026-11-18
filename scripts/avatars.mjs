@@ -16,13 +16,13 @@ const browser = await chromium.launch({ channel: 'chrome', args: ['--enable-unsa
 const errors = [];
 const bots = [];
 try {
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  await ctx.addInitScript((t) => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  await ctx.addInitScript(([t, q]) => {
     localStorage.setItem('civitas.token', t);
     localStorage.setItem('civitas.autoQuality', 'false');
-    localStorage.setItem('civitas.quality', '"low"');
+    localStorage.setItem('civitas.quality', JSON.stringify(q));
     localStorage.setItem('civitas.renderMode', '"3d"');
-  }, owner.token);
+  }, [owner.token, process.env.Q || 'low']); // Q=high node scripts/avatars.mjs for the high-quality look
   const A = await ctx.newPage();
   A.on('pageerror', (e) => errors.push(e.message));
   await A.goto(`${BASE}/room/${room.id}`);
@@ -73,6 +73,12 @@ try {
   }));
   step(`20 avatars on Low quality: ${fps} FPS in headless Chrome (software GL, not a phone measurement)`);
   await A.screenshot({ path: OUT + 'avatars-low.png' });
+  // Close-up: zoom the follow camera all the way in and crop the middle at 2x.
+  const box = await A.locator('main canvas').first().boundingBox();
+  await A.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let i = 0; i < 12; i++) { await A.mouse.wheel(0, -400); await A.waitForTimeout(60); }
+  await A.waitForTimeout(1200);
+  await A.screenshot({ path: OUT + 'avatars-closeup.png', clip: { x: box.x + box.width * 0.2, y: box.y + box.height * 0.15, width: box.width * 0.6, height: box.height * 0.7 } });
   await A.getByRole('button', { name: 'Top-down' }).click();
   await A.waitForTimeout(1500);
   await A.screenshot({ path: OUT + 'avatars-top.png' });

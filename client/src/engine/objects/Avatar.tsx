@@ -13,11 +13,14 @@ import { merged } from './merge';
 // so every avatar shares ONE material. Pivots (y, metres): hip 0.86, knee 0.47, shoulder 1.46, elbow 1.16.
 // Triangles: 723 on Low, 2,184 on Balanced/High (checked in avatar.test.ts) (same parts and pivots, fewer segments on Low).
 
-const HIP_Y = 0.86, HIP_X = 0.12, KNEE = 0.39, SHOULDER_Y = 1.46, SHOULDER_X = 0.31, ELBOW = 0.3, NECK_Y = 1.56;
+const HIP_Y = 0.86, HIP_X = 0.11, KNEE = 0.39, SHOULDER_Y = 1.45, SHOULDER_X = 0.3, ELBOW = 0.3, NECK_Y = 1.555;
 const SEAT_HIP_Y = 0.59; // seats are 0.48-0.50 m high; thigh radius 0.10 puts the hip pivot here
 const SOLE = '#e9e4da', SKIN = '#d9a982', EYE = '#1d1a18';
-// Soft city palette for trousers and hair/shoes; the jacket is the player's own colour (matches minimap/scoreboard).
-const PALETTE = ['#b8603f', '#2f7f86', '#d4a23a', '#4f6a8f', '#7d9a72', '#ece6da', '#3a3f47', '#5b4636'];
+// The jacket is the player's own colour (matches minimap/scoreboard). Trousers, hair and shoes come from muted,
+// natural palettes (no off-white trousers: they read as bare legs from the camera).
+const TROUSERS = ['#3a3f47', '#4f6a8f', '#5b4636', '#2f4a5c', '#6b5a45', '#2f6b70'];
+const HAIR = ['#2b2118', '#4a3424', '#1d1a18', '#6b4a2f', '#8a5a35'];
+const SHOES = ['#2b2a28', '#5b4636', '#3a3f47', '#7a3b2e'];
 
 const capsule = (r: number, total: number, d: Detail) => new THREE.CapsuleGeometry(r, Math.max(0.001, total - 2 * r), d.cap, d.radial);
 const sphere = (r: number, d: Detail) => new THREE.SphereGeometry(r, d.sw, d.sh);
@@ -25,72 +28,75 @@ type Detail = { radial: number; cap: number; sw: number; sh: number; small: [num
 const DETAIL: Record<'low' | 'high', Detail> = { low: { radial: 6, cap: 1, sw: 7, sh: 5, small: [5, 4] }, high: { radial: 10, cap: 3, sw: 12, sh: 9, small: [8, 6] } };
 const small = (r: number, d: Detail) => new THREE.SphereGeometry(r, d.small[0], d.small[1]);
 
-/** Torso a little wider at the chest than at the hips. */
+/** Torso: a rounded block, a little wider at the chest than at the hips, flatter front to back. */
 function torsoGeo(d: Detail) {
-  const g = capsule(0.22, 0.6, { ...d, radial: d.radial + 2, cap: d.cap + 1 }); // the biggest shape gets a bit more detail
+  const g = capsule(0.2, 0.66, { ...d, radial: d.radial + 2, cap: d.cap + 1 }); // the biggest shape gets a bit more detail
   const p = g.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {
-    const k = 1.12 + 0.28 * (p.getY(i) / 0.3); // 0.84 at the hips -> 1.4 at the chest
-    p.setX(i, p.getX(i) * Math.max(0.95, k));
-    p.setZ(i, p.getZ(i) * 0.82);
+    const k = 1.25 * (1 + 0.1 * (p.getY(i) / 0.33)); // 1.12 at the hips -> 1.37 at the chest
+    p.setX(i, p.getX(i) * k);
+    p.setZ(i, p.getZ(i) * 0.8);
   }
   g.computeVertexNormals();
   return g;
 }
 
-export interface CitizenColors { jacket: string; trousers: string; hair: string }
+export interface CitizenColors { jacket: string; trousers: string; hair: string; shoes: string }
 export function citizenColors(jacket: string, seed: string): CitizenColors {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
   const dist = (a: string, b: string) => { const x = new THREE.Color(a), y = new THREE.Color(b); return Math.hypot(x.r - y.r, x.g - y.g, x.b - y.b); };
   // First palette colour (starting at a per-player offset) that contrasts with the colours already used.
-  const pick = (k: number, avoid: string[]) => {
-    for (let i = 0; i < PALETTE.length; i++) {
-      const c = PALETTE[(Math.abs(h >> k) + i) % PALETTE.length];
-      if (avoid.every((a) => dist(a, c) > 0.3)) return c;
+  const pick = (palette: string[], k: number, avoid: string[]) => {
+    for (let i = 0; i < palette.length; i++) {
+      const c = palette[(Math.abs(h >> k) + i) % palette.length];
+      if (avoid.every((a) => dist(a, c) > 0.25)) return c;
     }
-    return PALETTE[0];
+    return palette[0];
   };
-  const trousers = pick(0, [jacket]);
-  return { jacket, trousers, hair: pick(4, [jacket, trousers]) };
+  const trousers = pick(TROUSERS, 0, [jacket]);
+  return { jacket, trousers, hair: pick(HAIR, 4, []), shoes: pick(SHOES, 8, [trousers]) };
 }
 
 /** All 12 segment geometries for one colour set and detail level (cached: avatars with the same look share them). */
 const geoCache = new Map<string, Record<string, THREE.BufferGeometry>>();
 export function citizenGeometry(col: CitizenColors, level: 'low' | 'high') {
-  const key = `${col.jacket}|${col.trousers}|${col.hair}|${level}`;
+  const key = `${col.jacket}|${col.trousers}|${col.hair}|${col.shoes}|${level}`;
   let set = geoCache.get(key);
   if (set) return set;
   const d = DETAIL[level];
-  const jacketDark = '#' + new THREE.Color(col.jacket).multiplyScalar(0.82).getHexString();
+  const jacketDark = '#' + new THREE.Color(col.jacket).multiplyScalar(0.9).getHexString();
   set = {
     // torso + neck (local to the hip pivot)
     torso: merged([
-      { geo: torsoGeo(d), color: col.jacket, pos: [0, 1.22 - HIP_Y, 0] },
-      { geo: new THREE.CylinderGeometry(0.065, 0.075, 0.12, d.radial), color: SKIN, pos: [0, NECK_Y - HIP_Y, 0] },
+      { geo: torsoGeo(d), color: col.jacket, pos: [0, 1.2 - HIP_Y, 0] },
+      { geo: new THREE.CylinderGeometry(0.06, 0.07, 0.1, d.radial), color: SKIN, pos: [0, NECK_Y - HIP_Y, 0] },
     ]),
     // jacket hem flaring over the hips (pivot at its top edge so it can swing)
-    hem: merged([{ geo: new THREE.CylinderGeometry(0.27, 0.31, 0.16, d.radial + 2, 1, true), color: jacketDark, pos: [0, -0.08, 0] }]),
+    // (matches the torso's hip cross-section, flaring a little; same jacket colour, a touch darker)
+    hem: merged([{ geo: new THREE.CylinderGeometry(0.235, 0.26, 0.13, d.radial + 2, 1, true), color: jacketDark, pos: [0, -0.065, 0], scale: [1, 1, 0.72] }]),
     // head with hair, eyes and brow (pivot at the neck)
     head: merged([
-      { geo: sphere(0.175, d), color: SKIN, pos: [0, 0.17, 0], scale: [1, 1.05, 1] },
-      { geo: new THREE.SphereGeometry(0.188, d.sw, Math.max(4, d.sh - 3), 0, Math.PI * 2, 0, Math.PI * 0.52), color: col.hair, pos: [0, 0.19, -0.015], rot: [-0.18, 0, 0] },
-      { geo: small(0.026, d), color: EYE, pos: [-0.062, 0.18, 0.158] },
-      { geo: small(0.026, d), color: EYE, pos: [0.062, 0.18, 0.158] },
-      { geo: new THREE.BoxGeometry(0.17, 0.026, 0.03), color: col.hair, pos: [0, 0.235, 0.158] },
+      { geo: sphere(0.18, d), color: SKIN, pos: [0, 0.17, 0], scale: [1, 1.05, 1] },
+      // full head of hair: a cap tilted back a little, covering the crown and the back down to the forehead
+      { geo: new THREE.SphereGeometry(0.193, d.sw, Math.max(4, d.sh - 2), 0, Math.PI * 2, 0, Math.PI * 0.56), color: col.hair, pos: [0, 0.18, -0.012], rot: [-0.22, 0, 0] },
+      { geo: small(0.022, d), color: EYE, pos: [-0.06, 0.165, 0.166] },
+      { geo: small(0.022, d), color: EYE, pos: [0.06, 0.165, 0.166] },
+      { geo: new THREE.BoxGeometry(0.13, 0.016, 0.03), color: col.hair, pos: [0, 0.21, 0.169] },
     ]),
     // front tuft that lags behind fast moves (pivot at the crown)
     tuft: merged([{ geo: small(0.09, d), color: col.hair, pos: [0, 0, 0.06], scale: [1, 0.42, 0.75], rot: [-0.3, 0, 0] }]),
-    upperArm: merged([{ geo: capsule(0.075, 0.32, d), color: col.jacket, pos: [0, -0.15, 0] }]),
+    // Limb segments overlap a few cm past each joint, so elbows and knees read as one smooth limb (no pinch).
+    upperArm: merged([{ geo: capsule(0.072, 0.38, d), color: col.jacket, pos: [0, -0.16, 0] }]),
     forearm: merged([
-      { geo: capsule(0.066, 0.27, d), color: col.jacket, pos: [0, -0.13, 0] },
-      { geo: small(0.066, d), color: SKIN, pos: [0, -0.3, 0.005], scale: [1, 1.25, 0.8] },
+      { geo: capsule(0.068, 0.32, d), color: col.jacket, pos: [0, -0.12, 0] },
+      { geo: small(0.07, d), color: SKIN, pos: [0, -0.3, 0.005], scale: [0.9, 1.15, 0.8] },
     ]),
-    thigh: merged([{ geo: capsule(0.105, 0.42, d), color: col.trousers, pos: [0, -0.195, 0] }]),
+    thigh: merged([{ geo: capsule(0.1, 0.48, d), color: col.trousers, pos: [0, -0.2, 0] }]),
     shin: merged([
-      { geo: capsule(0.088, 0.36, d), color: col.trousers, pos: [0, -0.17, 0] },
-      { geo: new THREE.BoxGeometry(0.15, 0.1, 0.27), color: col.hair, pos: [0, -(HIP_Y - KNEE) + 0.08, 0.05] },
-      { geo: new THREE.BoxGeometry(0.16, 0.03, 0.29), color: SOLE, pos: [0, -(HIP_Y - KNEE) + 0.015, 0.05] },
+      { geo: capsule(0.092, 0.42, d), color: col.trousers, pos: [0, -0.16, 0] },
+      { geo: new THREE.BoxGeometry(0.14, 0.09, 0.27), color: col.shoes, pos: [0, -(HIP_Y - KNEE) + 0.075, 0.05] },
+      { geo: new THREE.BoxGeometry(0.15, 0.03, 0.29), color: SOLE, pos: [0, -(HIP_Y - KNEE) + 0.015, 0.05] },
     ]),
   };
   geoCache.set(key, set);
@@ -321,7 +327,7 @@ export function Avatar({ sessionId, name, color, seed, speaking, showLabel, lite
         <group ref={hem} position={[0, 0.14, 0]}><mesh geometry={geo.hem} material={citizenMat} /></group>
         <group ref={head} position={[0, NECK_Y - HIP_Y, 0]}>
           <mesh geometry={geo.head} material={citizenMat} castShadow={shadow} />
-          <group ref={tuft} position={[0, 0.34, 0.03]}><mesh geometry={geo.tuft} material={citizenMat} /></group>
+          <group ref={tuft} position={[0, 0.35, 0.04]}><mesh geometry={geo.tuft} material={citizenMat} /></group>
         </group>
         {limb(-1)}
         {limb(1)}
