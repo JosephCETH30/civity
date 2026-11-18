@@ -3,10 +3,10 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AnimState } from '@civitas/shared';
 import { fxHitAt, fxShotAt, localPlayer, remoteRendered, remoteTargets } from '../core/transient';
 import { lamp } from '../materials/materials';
+import { merged } from './merge';
 
 // "Citizen": original stylised city dweller, 1.9 m tall, built from primitives.
 // 12 meshes, one per moving segment. Parts that move together are merged into one geometry with vertex colours,
@@ -18,28 +18,6 @@ const SEAT_HIP_Y = 0.59; // seats are 0.48-0.50 m high; thigh radius 0.10 puts t
 const SOLE = '#e9e4da', SKIN = '#d9a982', EYE = '#1d1a18';
 // Soft city palette for trousers and hair/shoes; the jacket is the player's own colour (matches minimap/scoreboard).
 const PALETTE = ['#b8603f', '#2f7f86', '#d4a23a', '#4f6a8f', '#7d9a72', '#ece6da', '#3a3f47', '#5b4636'];
-
-type Piece = { geo: THREE.BufferGeometry; color: string; pos?: [number, number, number]; scale?: [number, number, number]; rot?: [number, number, number] };
-
-/** Merge pieces into one geometry with a per-vertex colour (linear) so one shared material draws them all. */
-function merged(pieces: Piece[]) {
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
-  const geos = pieces.map((p) => {
-    const g = p.geo; // every piece is a fresh geometry, so transform it in place
-    g.deleteAttribute('uv');
-    q.setFromEuler(new THREE.Euler(...(p.rot ?? [0, 0, 0])));
-    g.applyMatrix4(m.compose(new THREE.Vector3(...(p.pos ?? [0, 0, 0])), q, new THREE.Vector3(...(p.scale ?? [1, 1, 1]))));
-    c.set(p.color);
-    const n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    return g;
-  });
-  const out = mergeGeometries(geos)!;
-  geos.forEach((g) => g.dispose());
-  out.computeBoundingSphere();
-  return out;
-}
 
 const capsule = (r: number, total: number, d: Detail) => new THREE.CapsuleGeometry(r, Math.max(0.001, total - 2 * r), d.cap, d.radial);
 const sphere = (r: number, d: Detail) => new THREE.SphereGeometry(r, d.sw, d.sh);

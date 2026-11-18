@@ -196,7 +196,8 @@ export class TrafficSystem {
   private placeCars(per100m: number) {
     let seed = 7;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const colors = ['#f4f2ee', '#2f3236', '#b8532e', '#5b7f99', '#9aa0a6', '#d9c7a0'];
+    // Soft city palette: red, white, silver, navy, teal, mustard.
+    const colors = ['#c4473a', '#efece6', '#b9bec4', '#2e3f5c', '#2f7f86', '#d4a23a'];
     for (const lane of this.lanes) {
       const n = Math.floor((lane.L / 100) * per100m);
       for (let k = 0; k < n; k++) {
