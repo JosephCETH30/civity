@@ -2,7 +2,7 @@
 // Two stages, both server-side so the keys never reach the browser:
 //   1. analyse: a vision model describes the photo and writes an edit instruction for the chosen transformation.
 //   2. render:  an image model applies that instruction and returns the new photo.
-import { groqChat, pollinationsImage } from './providers.ts';
+import { cloudflareEditImage, geminiEditImage, groqChat } from './providers.ts';
 import { config } from './config.ts';
 
 export const TRANSFORMS = {
@@ -66,6 +66,20 @@ export async function analysePhoto(kind: TransformKind, params: StudioParams, im
   };
 }
 
-export async function renderEdit(kind: TransformKind, instruction: string, image: { mime: string; base64: string }, description?: string) {
-  return pollinationsImage(instruction, image, { description, portrait: kind === 'age' });
+/** Pixel size from a JPEG (SOF marker) or PNG (IHDR) header, or null. */
+export function imageSize(buf: Buffer): { width: number; height: number } | null {
+  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  if (buf[0] !== 0xff || buf[1] !== 0xd8) return null;
+  for (let i = 2; i + 9 < buf.length;) {
+    if (buf[i] !== 0xff) return null;
+    const marker = buf[i + 1], len = buf.readUInt16BE(i + 2);
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { width: buf.readUInt16BE(i + 7), height: buf.readUInt16BE(i + 5) };
+    i += 2 + len;
+  }
+  return null;
+}
+
+export async function renderEdit(instruction: string, image: { mime: string; base64: string }) {
+  if (!config.cloudflare) return geminiEditImage(instruction, image);
+  return cloudflareEditImage(instruction, { ...image, ...imageSize(Buffer.from(image.base64, 'base64')) });
 }

@@ -254,7 +254,7 @@ export function createApp(manager: RoomManager) {
     const image = imageOf(body.image, 1_500_000, ['image/jpeg', 'image/png', 'image/webp']);
     if (!image) return bad(res, 400, 'Photo must be a JPEG, PNG or WebP under 1.5 MB');
     try {
-      const out = await renderEdit(body.kind, body.instruction, { mime: image.mime, base64: image.buf.toString('base64') }, body.description);
+      const out = await renderEdit(body.instruction, { mime: image.mime, base64: image.buf.toString('base64') });
       const result = Buffer.from(out.base64, 'base64');
       // Re-edit of an earlier result: keep the link only when that image belongs to this room.
       const [parent] = body.parentId ? await q('select id from studio_images where id = $1 and room_id = $2', [body.parentId, room.id]) : [];
@@ -262,7 +262,7 @@ export function createApp(manager: RoomManager) {
         'insert into studio_images (room_id, user_id, kind, params, instruction, source, source_mime, result, result_mime, parent_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id, created_at',
         [room.id, req.identity!.sub, body.kind, body.params, body.instruction, image.buf, image.mime, result, out.mime, parent?.id ?? null],
       );
-      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at, parentId: parent?.id ?? null, note: out.note, shared: false, mine: true });
+      res.status(201).json({ id: row.id, kind: body.kind, params: body.params, instruction: body.instruction, createdAt: row.created_at, parentId: parent?.id ?? null, shared: false, mine: true });
     } catch (e) {
       if (e instanceof ProviderError) return bad(res, e.status === 429 ? 429 : 502, e.message);
       throw e;

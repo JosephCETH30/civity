@@ -2,7 +2,6 @@
 process.env.DATABASE_URL ??= 'postgres://localhost:5432/civitas_test';
 process.env.GEMINI_API_KEY = ''; // always exercise the offline parser here
 process.env.GROQ_API_KEY = '';
-process.env.POLLINATIONS = 'off'; // no network calls from tests
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -266,7 +265,7 @@ test('fountain studio: analyse without providers falls back to the brief, render
   assert.equal((await api(`/rooms/${roomId}/studio/analyse`, { token: users[4].token, body: { image: jpg, kind: 'age', params: { age: 5 } } })).status, 403);
   const r = await api(`/rooms/${roomId}/studio/render`, { token: users[1].token, body: { image: jpg, kind: 'era', params: { year: 1960 }, instruction: an.json.instruction } });
   assert.equal(r.status, 502);
-  assert.match(r.json.error, /turned off/);
+  assert.match(r.json.error, /GEMINI_API_KEY/);
   assert.deepEqual((await api(`/rooms/${roomId}/studio`, { token: users[4].token })).json, []);
   // custom prompts: analysed from the user's own text; render accepts them (and a parent id) like the presets
   const cu = await api(`/rooms/${roomId}/studio/analyse`, { token: users[1].token, body: { image: jpg, kind: 'custom', params: { style: 'make it night with neon signs' } } });

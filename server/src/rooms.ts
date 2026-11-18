@@ -1,6 +1,6 @@
 // Room data access + access control shared by HTTP routes and the realtime server.
 import { randomInt } from 'node:crypto';
-import type { CreateRoomInput, Role, RoomSummary } from '@civitas/shared';
+import { MAX_PARTICIPANTS, type CreateRoomInput, type Role, type RoomSummary } from '@civitas/shared';
 import type { Identity } from './auth.ts';
 import { pool, q } from './db.ts';
 import { generateTemplate } from './templates.ts';
@@ -88,12 +88,14 @@ export async function seedDemos() {
     `insert into users (email) values ('demo@civitas.local') on conflict (email) do update set email = excluded.email returning id`,
   );
   await q(`insert into profiles (id, username, display_name, avatar_color) values ($1, 'civitas', 'CIVITAS', '#2f6fe4') on conflict do nothing`, [u.id]);
+  // Demo rooms take the full room size (raised from 20 to 30).
+  await q('update rooms set max_participants = $2 where owner_id = $1 and max_participants < $2', [u.id, MAX_PARTICIPANTS]);
   const [{ n }] = await q('select count(*)::int as n from rooms where owner_id = $1', [u.id]);
   if (n) return;
   const demos: CreateRoomInput[] = [
     { name: 'Demo: Modern City', description: 'Explore and edit a mid-size city with a bus line.', template: 'modern_city' },
     { name: 'Demo: University Campus', description: 'Faculties, dorms and green quads.', template: 'university_campus' },
     { name: 'Demo: Transportation Hub', description: 'Two bus lines to play with in the simulation.', template: 'transport_hub' },
-  ].map((d) => ({ ...d, template: d.template as CreateRoomInput['template'], visibility: 'public', maxParticipants: 20, worldSize: 160, defaultRole: 'editor' }));
+  ].map((d) => ({ ...d, template: d.template as CreateRoomInput['template'], visibility: 'public', maxParticipants: MAX_PARTICIPANTS, worldSize: 160, defaultRole: 'editor' }));
   for (const d of demos) await createRoomWithTemplate(u.id, d);
 }

@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router';
-import { createRoomSchema, TEMPLATE_LABELS, TEMPLATES, type RoomSummary, type Template } from '@civitas/shared';
+import { createRoomSchema, MAX_PARTICIPANTS, TEMPLATE_LABELS, TEMPLATES, type RoomSummary, type Template } from '@civitas/shared';
 import { AppHeader } from '../../components/layout/AppHeader';
 import { Alert, Button, Field, Input, Select } from '../../components/ui';
 import { api } from '../../services/api';
@@ -76,7 +76,7 @@ export default function CreateRoom() {
             <Field label="World size">
               <Select name="worldSize" defaultValue="160"><option value="96">Small (96 m)</option><option value="160">Medium (160 m)</option><option value="240">Large (240 m)</option></Select>
             </Field>
-            <Field label="Max participants"><Input name="maxParticipants" type="number" min={2} max={20} defaultValue={10} /></Field>
+            <Field label="Max participants"><Input name="maxParticipants" type="number" min={2} max={MAX_PARTICIPANTS} defaultValue={MAX_PARTICIPANTS} /></Field>
             <Field label="New members join as" hint="You can change roles later">
               <Select name="defaultRole" defaultValue="editor"><option value="editor">Editor</option><option value="participant">Participant</option><option value="viewer">Viewer</option></Select>
             </Field>

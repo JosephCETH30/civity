@@ -4,6 +4,8 @@ import { BATTLE, type CityObject, type ServerMessage } from '@civitas/shared';
 import { QuizTable, drawQuestions } from '../src/quiz.ts';
 import { QUIZ_BANK } from '../src/quizBank.ts';
 import { Battle } from '../src/battle.ts';
+import { imageSize } from '../src/studio.ts';
+import { readFileSync } from 'node:fs';
 
 test('quiz bank: every question has 4 distinct choices', () => {
   assert.ok(QUIZ_BANK.length >= 150);
@@ -61,4 +63,13 @@ test('battle: hits need line of sight, 4 body hits kill, cooldown and range are 
   assert.equal(b.shoot(A, [0, 1.3, 0], [0, 0, 1], [A, B], [], now + 10), false);
   assert.equal(b.shoot(A, [30, 1.3, 0], [0, 0, 1], [A, B], [], now + 1000), false);
   b.dispose();
+});
+
+test('studio reads the photo size from JPEG and PNG headers (keeps the aspect ratio of edits)', () => {
+  const jpg = readFileSync(new URL('../../client/public/landing/city.jpg', import.meta.url));
+  const size = imageSize(jpg);
+  assert.ok(size && size.width > 100 && size.height > 100, JSON.stringify(size));
+  const png = readFileSync(new URL('../../client/public/icon-192.png', import.meta.url));
+  assert.deepEqual(imageSize(png), { width: 192, height: 192 });
+  assert.equal(imageSize(Buffer.from('not an image')), null);
 });

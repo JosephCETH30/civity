@@ -1,0 +1,8 @@
+# CIVITAS image-edit proxy: runs FLUX.2 Klein on Workers AI (free daily quota) for the fountain studio.
+# Deploy: cd cloudflare-worker && npx wrangler deploy ; secret: npx wrangler secret put SECRET
+name = "civitas-ai"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[ai]
+binding = "AI"

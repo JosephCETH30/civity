@@ -25,11 +25,14 @@ export const TEMPLATE_LABELS: Record<Template, string> = {
 };
 export const WORLD_SIZES = [96, 160, 240] as const;
 
+/** Most people one room can hold (voice/video included). */
+export const MAX_PARTICIPANTS = 30;
+
 export const createRoomSchema = z.object({
   name: z.string().trim().min(2).max(60),
   description: z.string().trim().max(300).default(''),
   visibility: z.enum(['private', 'public']),
-  maxParticipants: z.number().int().min(2).max(20),
+  maxParticipants: z.number().int().min(2).max(MAX_PARTICIPANTS),
   template: z.enum(TEMPLATES),
   worldSize: z.union([z.literal(96), z.literal(160), z.literal(240)]),
   defaultRole: z.enum(['editor', 'participant', 'viewer']),

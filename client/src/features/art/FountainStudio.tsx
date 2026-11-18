@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 type Kind = 'age' | 'era' | 'restyle' | 'custom';
 interface Caps { text: string; vision: string; image: string }
 interface Analysis { description: string; instruction: string; warnings: string[]; provider: string }
-interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string; parentId?: string | null; note?: string; shared?: boolean; mine?: boolean }
+interface Item { id: string; kind: Kind; params: { age?: number; year?: number; style?: string }; instruction: string; createdAt: string; author?: string; parentId?: string | null; shared?: boolean; mine?: boolean }
 
 const AGES = [5, 17, 30, 50, 70];
 const YEARS = [1945, 1960, 1980, 1990, 2040];
@@ -175,7 +175,6 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
           {instruction.length > 0 && !promptOk && <p className="text-xs text-muted-foreground">Write at least 10 characters.</p>}
         </div>
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
-        {result?.note && <p className="text-xs text-amber-700" role="status">{result.note}</p>}
         {!canEdit && <p className="text-xs text-muted-foreground">Viewers can browse the gallery; ask the owner for edit access to create.</p>}
         {canEdit && (
           <div className="flex flex-wrap gap-2">
@@ -186,10 +185,7 @@ export function FountainStudio({ onBack }: { onBack: () => void }) {
             <Button variant="ghost" onClick={onBack}>Back</Button>
           </div>
         )}
-        {caps && !imageReady && <p className="text-xs text-amber-700">Image generation is turned off on this server. Analysis and the 3D relief still work.</p>}
-        {caps?.image === 'pollinations-free' && (
-          <p className="text-xs text-muted-foreground">Free generator: makes a new realistic image from the AI's description (one image every 45 seconds for the whole server), so faces will not match exactly.</p>
-        )}
+        {caps && !imageReady && <p className="text-xs text-amber-700">Image generation needs a Gemini key on the server (GEMINI_API_KEY). Analysis and the 3D relief still work.</p>}
       </div>
 
       <aside className="space-y-2">
