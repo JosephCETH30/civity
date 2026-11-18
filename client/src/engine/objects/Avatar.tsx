@@ -3,34 +3,140 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AnimState } from '@civitas/shared';
 import { fxHitAt, fxShotAt, localPlayer, remoteRendered, remoteTargets } from '../core/transient';
+import { lamp } from '../materials/materials';
 
-// Original stylised figure (not a licensed character). ~600 triangles, 7 draw calls full / 2 lite.
-const torsoGeo = new THREE.CapsuleGeometry(0.3, 0.45, 4, 10);
-const headGeo = new THREE.SphereGeometry(0.24, 14, 10);
-const hairGeo = new THREE.SphereGeometry(0.255, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
-const legGeo = new THREE.CapsuleGeometry(0.11, 0.55, 3, 8).translate(0, -0.38, 0); // pivot at hip
-const armGeo = new THREE.CapsuleGeometry(0.08, 0.48, 3, 8).translate(0, -0.32, 0); // pivot at shoulder
+// "Citizen": original stylised city dweller, 1.9 m tall, built from primitives.
+// 12 meshes, one per moving segment. Parts that move together are merged into one geometry with vertex colours,
+// so every avatar shares ONE material. Pivots (y, metres): hip 0.86, knee 0.47, shoulder 1.46, elbow 1.16.
+// Triangles: 723 on Low, 2,184 on Balanced/High (checked in avatar.test.ts) (same parts and pivots, fewer segments on Low).
+
+const HIP_Y = 0.86, HIP_X = 0.12, KNEE = 0.39, SHOULDER_Y = 1.46, SHOULDER_X = 0.31, ELBOW = 0.3, NECK_Y = 1.56;
+const SEAT_HIP_Y = 0.59; // seats are 0.48-0.50 m high; thigh radius 0.10 puts the hip pivot here
+const SOLE = '#e9e4da', SKIN = '#d9a982', EYE = '#1d1a18';
+// Soft city palette for trousers and hair/shoes; the jacket is the player's own colour (matches minimap/scoreboard).
+const PALETTE = ['#b8603f', '#2f7f86', '#d4a23a', '#4f6a8f', '#7d9a72', '#ece6da', '#3a3f47', '#5b4636'];
+
+type Piece = { geo: THREE.BufferGeometry; color: string; pos?: [number, number, number]; scale?: [number, number, number]; rot?: [number, number, number] };
+
+/** Merge pieces into one geometry with a per-vertex colour (linear) so one shared material draws them all. */
+function merged(pieces: Piece[]) {
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+  const geos = pieces.map((p) => {
+    const g = p.geo; // every piece is a fresh geometry, so transform it in place
+    g.deleteAttribute('uv');
+    q.setFromEuler(new THREE.Euler(...(p.rot ?? [0, 0, 0])));
+    g.applyMatrix4(m.compose(new THREE.Vector3(...(p.pos ?? [0, 0, 0])), q, new THREE.Vector3(...(p.scale ?? [1, 1, 1]))));
+    c.set(p.color);
+    const n = g.attributes.position.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+  });
+  const out = mergeGeometries(geos)!;
+  geos.forEach((g) => g.dispose());
+  out.computeBoundingSphere();
+  return out;
+}
+
+const capsule = (r: number, total: number, d: Detail) => new THREE.CapsuleGeometry(r, Math.max(0.001, total - 2 * r), d.cap, d.radial);
+const sphere = (r: number, d: Detail) => new THREE.SphereGeometry(r, d.sw, d.sh);
+type Detail = { radial: number; cap: number; sw: number; sh: number; small: [number, number] };
+const DETAIL: Record<'low' | 'high', Detail> = { low: { radial: 6, cap: 1, sw: 7, sh: 5, small: [5, 4] }, high: { radial: 10, cap: 3, sw: 12, sh: 9, small: [8, 6] } };
+const small = (r: number, d: Detail) => new THREE.SphereGeometry(r, d.small[0], d.small[1]);
+
+/** Torso a little wider at the chest than at the hips. */
+function torsoGeo(d: Detail) {
+  const g = capsule(0.22, 0.6, { ...d, radial: d.radial + 2, cap: d.cap + 1 }); // the biggest shape gets a bit more detail
+  const p = g.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const k = 1.12 + 0.28 * (p.getY(i) / 0.3); // 0.84 at the hips -> 1.4 at the chest
+    p.setX(i, p.getX(i) * Math.max(0.95, k));
+    p.setZ(i, p.getZ(i) * 0.82);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+export interface CitizenColors { jacket: string; trousers: string; hair: string }
+export function citizenColors(jacket: string, seed: string): CitizenColors {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  const dist = (a: string, b: string) => { const x = new THREE.Color(a), y = new THREE.Color(b); return Math.hypot(x.r - y.r, x.g - y.g, x.b - y.b); };
+  // First palette colour (starting at a per-player offset) that contrasts with the colours already used.
+  const pick = (k: number, avoid: string[]) => {
+    for (let i = 0; i < PALETTE.length; i++) {
+      const c = PALETTE[(Math.abs(h >> k) + i) % PALETTE.length];
+      if (avoid.every((a) => dist(a, c) > 0.3)) return c;
+    }
+    return PALETTE[0];
+  };
+  const trousers = pick(0, [jacket]);
+  return { jacket, trousers, hair: pick(4, [jacket, trousers]) };
+}
+
+/** All 12 segment geometries for one colour set and detail level (cached: avatars with the same look share them). */
+const geoCache = new Map<string, Record<string, THREE.BufferGeometry>>();
+export function citizenGeometry(col: CitizenColors, level: 'low' | 'high') {
+  const key = `${col.jacket}|${col.trousers}|${col.hair}|${level}`;
+  let set = geoCache.get(key);
+  if (set) return set;
+  const d = DETAIL[level];
+  const jacketDark = '#' + new THREE.Color(col.jacket).multiplyScalar(0.82).getHexString();
+  set = {
+    // torso + neck (local to the hip pivot)
+    torso: merged([
+      { geo: torsoGeo(d), color: col.jacket, pos: [0, 1.22 - HIP_Y, 0] },
+      { geo: new THREE.CylinderGeometry(0.065, 0.075, 0.12, d.radial), color: SKIN, pos: [0, NECK_Y - HIP_Y, 0] },
+    ]),
+    // jacket hem flaring over the hips (pivot at its top edge so it can swing)
+    hem: merged([{ geo: new THREE.CylinderGeometry(0.27, 0.31, 0.16, d.radial + 2, 1, true), color: jacketDark, pos: [0, -0.08, 0] }]),
+    // head with hair, eyes and brow (pivot at the neck)
+    head: merged([
+      { geo: sphere(0.175, d), color: SKIN, pos: [0, 0.17, 0], scale: [1, 1.05, 1] },
+      { geo: new THREE.SphereGeometry(0.188, d.sw, Math.max(4, d.sh - 3), 0, Math.PI * 2, 0, Math.PI * 0.52), color: col.hair, pos: [0, 0.19, -0.015], rot: [-0.18, 0, 0] },
+      { geo: small(0.026, d), color: EYE, pos: [-0.062, 0.18, 0.158] },
+      { geo: small(0.026, d), color: EYE, pos: [0.062, 0.18, 0.158] },
+      { geo: new THREE.BoxGeometry(0.17, 0.026, 0.03), color: col.hair, pos: [0, 0.235, 0.158] },
+    ]),
+    // front tuft that lags behind fast moves (pivot at the crown)
+    tuft: merged([{ geo: small(0.09, d), color: col.hair, pos: [0, 0, 0.06], scale: [1, 0.42, 0.75], rot: [-0.3, 0, 0] }]),
+    upperArm: merged([{ geo: capsule(0.075, 0.32, d), color: col.jacket, pos: [0, -0.15, 0] }]),
+    forearm: merged([
+      { geo: capsule(0.066, 0.27, d), color: col.jacket, pos: [0, -0.13, 0] },
+      { geo: small(0.066, d), color: SKIN, pos: [0, -0.3, 0.005], scale: [1, 1.25, 0.8] },
+    ]),
+    thigh: merged([{ geo: capsule(0.105, 0.42, d), color: col.trousers, pos: [0, -0.195, 0] }]),
+    shin: merged([
+      { geo: capsule(0.088, 0.36, d), color: col.trousers, pos: [0, -0.17, 0] },
+      { geo: new THREE.BoxGeometry(0.15, 0.1, 0.27), color: col.hair, pos: [0, -(HIP_Y - KNEE) + 0.08, 0.05] },
+      { geo: new THREE.BoxGeometry(0.16, 0.03, 0.29), color: SOLE, pos: [0, -(HIP_Y - KNEE) + 0.015, 0.05] },
+    ]),
+  };
+  geoCache.set(key, set);
+  return set;
+}
+
+// One material for every avatar (colours live in the geometry).
+const citizenMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+// Battle blaster: original chunky toy design. Body, grip and barrel merged; one glowing strip (lamp material).
+const blasterGeo = merged([
+  { geo: new THREE.BoxGeometry(0.12, 0.14, 0.4), color: '#3a4250', pos: [0, 0, 0.1] },
+  { geo: new THREE.BoxGeometry(0.07, 0.15, 0.08), color: '#262b33', pos: [0, -0.1, 0], rot: [0.3, 0, 0] },
+  { geo: new THREE.CylinderGeometry(0.035, 0.04, 0.16, 8), color: '#262b33', pos: [0, 0.01, 0.37], rot: [Math.PI / 2, 0, 0] },
+  { geo: new THREE.BoxGeometry(0.13, 0.05, 0.12), color: '#e07a3c', pos: [0, 0.075, 0.02] },
+]);
+const blasterStrip = new THREE.BoxGeometry(0.012, 0.03, 0.26);
+
 const ring = new THREE.RingGeometry(0.6, 0.78, 24).rotateX(-Math.PI / 2);
-const skin = new THREE.MeshLambertMaterial({ color: '#d9a982' });
-const hair = new THREE.MeshLambertMaterial({ color: '#2b2118' });
-const trousers = new THREE.MeshLambertMaterial({ color: '#2f3640' });
 const speakMat = new THREE.MeshBasicMaterial({ color: '#16a34a', transparent: true, opacity: 0.9 });
-// Battle blaster (held forward at chest height) and the health bar shown above fighters.
-const gunGeo = new THREE.BoxGeometry(0.12, 0.16, 0.62);
-const gunMat = new THREE.MeshLambertMaterial({ color: '#1f2328' });
-const gunTipMat = new THREE.MeshBasicMaterial({ color: '#ffd23f', toneMapped: false });
-const tipGeo = new THREE.BoxGeometry(0.13, 0.06, 0.08);
 const hpBack = new THREE.SpriteMaterial({ color: '#111111', opacity: 0.75, transparent: true, depthWrite: false });
 const hpMats = { high: new THREE.SpriteMaterial({ color: '#22c55e', depthWrite: false }), mid: new THREE.SpriteMaterial({ color: '#eab308', depthWrite: false }), low: new THREE.SpriteMaterial({ color: '#ef4444', depthWrite: false }) };
 const _v = new THREE.Vector3();
-const bodyMats = new Map<string, THREE.Material>();
-const bodyMat = (c: string) => {
-  let m = bodyMats.get(c);
-  if (!m) bodyMats.set(c, (m = new THREE.MeshLambertMaterial({ color: c })));
-  return m;
-};
+
 
 /**
  * Optional custom avatar: put a GLB at client/public/models/avatar.glb (you must have the rights to it).
@@ -55,6 +161,8 @@ interface Props {
   sessionId: string | 'local';
   name: string;
   color: string;
+  /** Stable per-player id (user id) so everyone sees the same trousers/hair colours for a player. */
+  seed?: string;
   speaking: boolean;
   showLabel: boolean;
   lite: boolean;
@@ -63,23 +171,33 @@ interface Props {
   hp?: number;
 }
 
+const LEG = 0.86; // hip to sole, for stride length
+const damp = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
+
 /** Remote avatars interpolate toward the last server pose; the local one reads the controller directly. */
-export function Avatar({ sessionId, name, color, speaking, showLabel, lite, armed, hp }: Props) {
+export function Avatar({ sessionId, name, color, seed, speaking, showLabel, lite, armed, hp }: Props) {
   const g = useRef<THREE.Group>(null);
-  const legL = useRef<THREE.Mesh>(null);
-  const legR = useRef<THREE.Mesh>(null);
-  const armL = useRef<THREE.Mesh>(null);
-  const armR = useRef<THREE.Mesh>(null);
-  const torso = useRef<THREE.Group>(null);
-  const animRef = useRef<AnimState>('idle');
   const pose = useRef<THREE.Group>(null);
-  const phase = useRef(Math.random() * 10);
-  const mat = useMemo(() => bodyMat(color), [color]);
+  const upper = useRef<THREE.Group>(null);
+  const torso = useRef<THREE.Mesh>(null);
+  const hem = useRef<THREE.Group>(null);
+  const head = useRef<THREE.Group>(null);
+  const tuft = useRef<THREE.Group>(null);
+  const armL = useRef<THREE.Group>(null), armR = useRef<THREE.Group>(null);
+  const foreL = useRef<THREE.Group>(null), foreR = useRef<THREE.Group>(null);
+  const thighL = useRef<THREE.Group>(null), thighR = useRef<THREE.Group>(null);
+  const shinL = useRef<THREE.Group>(null), shinR = useRef<THREE.Group>(null);
+  const animRef = useRef<AnimState>('idle');
+  // Animation memory: clocks, smoothed speed / vertical speed, follow-through angles, idle look-around.
+  const st = useRef({ phase: Math.random() * 10, speed: 0, vy: 0, prevAnim: 'idle' as AnimState, animT: 0, landT: 9, lookT: 2, look: 0, headYaw: 0, hemX: 0, hemZ: 0, tuftX: 0, px: 0, py: 0, pz: 0, init: false });
+  const colors = useMemo(() => citizenColors(color, seed ?? name), [color, seed, name]);
+  const geo = useMemo(() => citizenGeometry(colors, lite ? 'low' : 'high'), [colors, lite]);
   const custom = useCustomModel() && !lite;
 
-  useFrame((_, dt) => {
+  useFrame((_, rawDt) => {
     const grp = g.current;
     if (!grp) return;
+    const dt = Math.min(rawDt, 0.1);
     let anim: AnimState;
     if (sessionId === 'local') {
       grp.position.set(localPlayer.x, localPlayer.y, localPlayer.z);
@@ -97,63 +215,152 @@ export function Avatar({ sessionId, name, color, speaking, showLabel, lite, arme
       anim = t.a;
       remoteRendered.set(sessionId, { x: grp.position.x, z: grp.position.z });
     }
-    const walking = anim === 'walk';
     animRef.current = anim;
-    phase.current += dt * (walking ? 8 : anim === 'wave' ? 10 : 1.6);
-    const swing = walking ? Math.sin(phase.current) * 0.55 : 0;
-    // Pose per state. Legs/arms pivot at hip/shoulder; the body drops 0.45 m when seated.
-    let legX = swing, armLX = -swing * 0.8, armRX = swing * 0.8, armRZ = 0, bodyY = 0;
-    if (anim === 'sit') { legX = -1.45; armLX = armRX = -0.35; bodyY = -0.42; }
-    else if (anim === 'jump') { legX = 0.45; armLX = armRX = -2.4; }
-    else if (anim === 'wave') { armRZ = 2.5 + Math.sin(phase.current) * 0.35; }
-    if (armed && anim !== 'sit' && anim !== 'fall') armRX = -1.45; // aim the blaster forward
+    const s = st.current;
+    // Measured ground speed and vertical speed drive stride length, lean and follow-through.
+    if (!s.init) { s.px = grp.position.x; s.py = grp.position.y; s.pz = grp.position.z; s.init = true; }
+    const rawSpeed = dt > 0 ? Math.hypot(grp.position.x - s.px, grp.position.z - s.pz) / dt : 0;
+    const rawVy = dt > 0 ? (grp.position.y - s.py) / dt : 0;
+    s.px = grp.position.x; s.py = grp.position.y; s.pz = grp.position.z;
+    s.speed += (Math.min(rawSpeed, 20) - s.speed) * damp(8, dt);
+    s.vy += (Math.max(-12, Math.min(12, rawVy)) - s.vy) * damp(10, dt);
+    if (anim !== s.prevAnim) { if (s.prevAnim === 'jump') s.landT = 0; s.prevAnim = anim; s.animT = 0; }
+    s.animT += dt;
+    s.landT += dt;
+    if (custom) return; // the GLB plays its own clips
+
+    const walking = anim === 'walk';
+    const speed = walking ? Math.max(1.5, s.speed) : 0;
+    const amp = walking ? Math.min(0.85, 0.3 + speed * 0.045) : 0;
+    // One phase cycle = two steps; step length follows leg angle so the feet don't slide.
+    const cycle = Math.max(0.6, 4 * LEG * Math.sin(Math.max(amp, 0.2)));
+    s.phase += walking ? (dt * Math.PI * 2 * speed) / cycle : dt * 1.6;
+    const sn = Math.sin(s.phase), cs = Math.cos(s.phase);
+
+    let thL = 0, thR = 0, knL = 0.04, knR = 0.04;
+    let uaL = 0, uaR = 0, uaLZ = -0.07, uaRZ = 0.07, faL = -0.15, faR = -0.15, faRZ = 0;
+    let bodyY = 0, bodyZ = 0, lean = 0, roll = 0, sway = 0, breath = 0, squash = 1, headPitch = 0, look = 0;
+    if (walking) {
+      thL = -amp * sn; thR = amp * sn;
+      knL = 0.1 + 1.3 * amp * Math.max(0, cs); knR = 0.1 + 1.3 * amp * Math.max(0, -cs);
+      uaL = amp * 0.8 * sn; uaR = -amp * 0.8 * sn;
+      faL = faR = -0.25 - 0.4 * amp;
+      bodyY = 0.035 * (1 - Math.abs(sn)) - 0.02; // two bobs per stride, highest when the legs pass
+      sway = 0.02 * sn; roll = -0.035 * sn; // weight over the supporting leg
+      lean = Math.min(0.28, speed * 0.022);
+    } else if (anim === 'idle') {
+      breath = Math.sin(s.phase) * 0.012;
+      sway = 0.012 * Math.sin(s.phase * 0.37); roll = 0.015 * Math.sin(s.phase * 0.37);
+      s.lookT -= dt;
+      if (s.lookT < 0) { s.look = Math.random() < 0.5 ? 0 : (Math.random() - 0.5) * 1.1; s.lookT = 2 + Math.random() * 3; }
+      look = s.look;
+    } else if (anim === 'sit') {
+      thL = thR = -1.5; knL = knR = 1.5;
+      bodyY = SEAT_HIP_Y - HIP_Y; bodyZ = -0.08;
+      uaL = uaR = -0.45; faL = faR = -0.9; // hands resting on the thighs
+    } else if (anim === 'jump') {
+      const t = s.animT;
+      if (t < 0.08) { squash = 1 - 1.2 * t; knL = knR = 0.6; thL = thR = -0.3; } // crouch
+      else if (t < 0.22) { squash = 1.07; } // stretch on take-off
+      else { thL = thR = -0.9; knL = knR = 1.4; headPitch = -0.15; } // tuck at the top
+      uaL = uaR = -2.4; faL = faR = -0.2;
+    } else if (anim === 'wave') {
+      uaRZ = 2.5; faR = -0.2; faRZ = 0.5 * Math.sin(s.animT * 10);
+      breath = Math.sin(s.phase) * 0.01;
+    } else if (anim === 'fall') {
+      uaLZ = -0.9; uaRZ = 0.9; uaL = uaR = -0.4; knL = 0.5; knR = 0.2;
+    }
+    // Landing squash, recovering over 0.2 s.
+    if (anim !== 'jump' && s.landT < 0.2) {
+      const k = 1 - s.landT / 0.2;
+      squash *= 1 - 0.12 * k; knL += 0.5 * k; knR += 0.5 * k; thL -= 0.25 * k; thR -= 0.25 * k;
+    }
+    if (armed && anim !== 'sit' && anim !== 'fall') { uaR = -1.45; uaRZ = 0; faR = 0; faRZ = 0; uaL = -1.15; uaLZ = 0.45; faL = -0.35; }
     // Battle feedback: arm kicks up when firing; the body flinches back when hit.
     const nowMs = performance.now();
     const shotK = Math.max(0, 1 - (nowMs - (fxShotAt.get(sessionId) ?? -1e9)) / 150);
     const hitK = Math.max(0, 1 - (nowMs - (fxHitAt.get(sessionId) ?? -1e9)) / 260);
-    armRX -= shotK * 0.35;
-    if (legL.current) legL.current.rotation.x = anim === 'sit' ? legX : anim === 'jump' ? -legX : legX;
-    if (legR.current) legR.current.rotation.x = anim === 'sit' || anim === 'jump' ? legX : -legX;
-    if (legL.current) legL.current.position.y = 0.85 + bodyY;
-    if (legR.current) legR.current.position.y = 0.85 + bodyY;
-    if (armL.current) { armL.current.rotation.x = armLX; armL.current.position.y = 1.55 + bodyY; }
-    if (armR.current) { armR.current.rotation.x = armRX; armR.current.rotation.z = armRZ; armR.current.position.y = 1.55 + bodyY; }
-    if (torso.current) torso.current.position.y = bodyY + (walking ? Math.abs(Math.sin(phase.current)) * 0.05 : anim === 'idle' ? Math.sin(phase.current) * 0.012 : 0);
-    // Knocked down: tip over backwards onto the ground, then get back up.
+    uaR -= shotK * 0.35;
+
+    // Follow-through: hem and hair tuft lag behind lean, sway and vertical motion.
+    s.hemX += (-lean * 1.1 + s.vy * 0.03 - s.hemX) * damp(6, dt);
+    s.hemZ += (-roll * 1.6 - s.hemZ) * damp(6, dt);
+    s.tuftX += (Math.max(-0.5, Math.min(0.6, -s.vy * 0.06)) - lean * 0.8 - s.tuftX) * damp(9, dt);
+    s.headYaw += (look - s.headYaw) * damp(3, dt);
+
+    const set = (o: THREE.Object3D | null, x: number, z = 0) => { if (o) { o.rotation.x = x; o.rotation.z = z; } };
+    set(thighL.current, thL); set(thighR.current, thR);
+    set(shinL.current, knL); set(shinR.current, knR);
+    set(armL.current, uaL, uaLZ); set(armR.current, uaR, uaRZ);
+    set(foreL.current, faL); set(foreR.current, faR, faRZ);
+    for (const t of [thighL.current, thighR.current]) if (t) { t.position.y = HIP_Y + bodyY; t.position.z = bodyZ; }
+    if (upper.current) {
+      upper.current.position.set(sway, HIP_Y + bodyY, bodyZ);
+      upper.current.rotation.set(lean, 0, roll);
+    }
+    if (torso.current) torso.current.scale.set(1 - breath * 0.5, 1 + breath, 1);
+    if (hem.current) hem.current.rotation.set(s.hemX, 0, s.hemZ);
+    if (tuft.current) tuft.current.rotation.x = s.tuftX;
+    if (head.current) head.current.rotation.set(headPitch - lean * 0.5, s.headYaw, 0);
     if (pose.current) {
-      const k = 1 - Math.exp(-dt * 12);
+      // Knocked down: tip over backwards onto the ground, then get back up. Squash/stretch from the feet.
+      const k = damp(12, dt);
       const down = anim === 'fall';
       pose.current.rotation.x += ((down ? -1.45 : hitK * -0.4) - pose.current.rotation.x) * k;
       pose.current.rotation.z = hitK * Math.sin(nowMs / 25) * 0.08;
       pose.current.position.y += ((down ? 0.3 : 0) - pose.current.position.y) * k;
+      pose.current.scale.set(1 / Math.sqrt(squash), squash, 1 / Math.sqrt(squash));
     }
   });
 
+  const shadow = !lite;
+  const limb = (side: -1 | 1) => (
+    <group ref={side < 0 ? armL : armR} position={[side * SHOULDER_X, SHOULDER_Y - HIP_Y, 0]}>
+      <mesh geometry={geo.upperArm} material={citizenMat} />
+      <group ref={side < 0 ? foreL : foreR} position={[0, -ELBOW, 0]}>
+        <mesh geometry={geo.forearm} material={citizenMat} />
+        {side > 0 && armed && (
+          <group position={[0, -0.3, 0.03]} rotation-x={Math.PI / 2}>
+            <mesh geometry={blasterGeo} material={citizenMat} />
+            <mesh geometry={blasterStrip} material={lamp} position={[0.062, 0.02, 0.1]} />
+          </group>
+        )}
+      </group>
+    </group>
+  );
+  const leg = (side: -1 | 1) => (
+    <group ref={side < 0 ? thighL : thighR} position={[side * HIP_X, HIP_Y, 0]}>
+      <mesh geometry={geo.thigh} material={citizenMat} />
+      <group ref={side < 0 ? shinL : shinR} position={[0, -KNEE, 0]}>
+        <mesh geometry={geo.shin} material={citizenMat} castShadow={shadow} />
+      </group>
+    </group>
+  );
   const procedural = (
     <>
-      <group ref={torso}>
-        <mesh geometry={torsoGeo} material={mat} position={[0, 1.27, 0]} castShadow={!lite} />
-        <mesh geometry={headGeo} material={skin} position={[0, 1.86, 0]} castShadow={!lite} />
-        {!lite && <mesh geometry={hairGeo} material={hair} position={[0, 1.88, -0.03]} rotation-x={-0.25} />}
+      <group ref={upper} position={[0, HIP_Y, 0]}>
+        <mesh ref={torso} geometry={geo.torso} material={citizenMat} castShadow={shadow} />
+        <group ref={hem} position={[0, 0.14, 0]}><mesh geometry={geo.hem} material={citizenMat} /></group>
+        <group ref={head} position={[0, NECK_Y - HIP_Y, 0]}>
+          <mesh geometry={geo.head} material={citizenMat} castShadow={shadow} />
+          <group ref={tuft} position={[0, 0.34, 0.03]}><mesh geometry={geo.tuft} material={citizenMat} /></group>
+        </group>
+        {limb(-1)}
+        {limb(1)}
       </group>
-      {!lite && (
-        <>
-          <mesh ref={armL} geometry={armGeo} material={mat} position={[-0.38, 1.55, 0]} />
-          <mesh ref={armR} geometry={armGeo} material={mat} position={[0.38, 1.55, 0]} />
-          <mesh ref={legL} geometry={legGeo} material={trousers} position={[-0.13, 0.85, 0]} />
-          <mesh ref={legR} geometry={legGeo} material={trousers} position={[0.13, 0.85, 0]} />
-        </>
-      )}
+      {leg(-1)}
+      {leg(1)}
     </>
   );
 
   return (
     <group ref={g}>
-      <group ref={pose}>{custom ? <Suspense fallback={procedural}><CustomBody anim={animRef} /></Suspense> : procedural}
-        {armed && (
-          <group position={[0.36, 1.32, 0.42]}>
-            <mesh geometry={gunGeo} material={gunMat} />
-            <mesh geometry={tipGeo} material={gunTipMat} position={[0, 0.02, 0.33]} />
+      <group ref={pose}>
+        {custom ? <Suspense fallback={procedural}><CustomBody anim={animRef} /></Suspense> : procedural}
+        {custom && armed && (
+          <group position={[0.3, 1.3, 0.3]}>
+            <mesh geometry={blasterGeo} material={citizenMat} />
+            <mesh geometry={blasterStrip} material={lamp} position={[0.062, 0.02, 0.1]} />
           </group>
         )}
       </group>

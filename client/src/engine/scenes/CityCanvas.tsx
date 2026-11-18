@@ -138,11 +138,11 @@ function Scene() {
       <Transit routes={routes} objects={objectsMap} sim={sim} highlightStops={tool.kind === 'route' ? tool.stops : []} carsPer100m={quality === 'low' ? 1.5 : 3} />
 
       <BattleScene />
-      {me && cameraMode !== 'first' && <Avatar sessionId="local" name={me.name} color={me.color} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} armed={!!battle[me.id]} />}
+      {me && cameraMode !== 'first' && <Avatar sessionId="local" name={me.name} color={me.color} seed={me.userId} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} armed={!!battle[me.id]} />}
       {Object.values(players)
         .filter((p) => p.id !== self?.sessionId)
         .map((p) => (
-          <Avatar key={p.id} sessionId={p.id} name={p.name} color={p.color} speaking={speaking.has(p.userId)} showLabel lite={quality === 'low'} armed={!!battle[p.id]} hp={battle[p.id]?.hp} />
+          <Avatar key={p.id} sessionId={p.id} name={p.name} color={p.color} seed={p.userId} speaking={speaking.has(p.userId)} showLabel lite={quality === 'low'} armed={!!battle[p.id]} hp={battle[p.id]?.hp} />
         ))}
     </>
   );

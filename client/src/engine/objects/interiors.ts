@@ -41,7 +41,7 @@ export function interiorFor(o: Pick<CityObject, 'type' | 'scale'>): InteriorLayo
     case 'residential': {
       parts.push({ geo: 'box', pos: [0, 0.01, -0.3], size: [Math.min(2.6, hw), 0.02, 1.8], color: '#c9b28f' }); // rug
       // sofa against the back wall, two seats
-      parts.push({ geo: 'box', pos: [0, 0.22, -hd + 0.5], size: [2.2, 0.44, 0.8], color: FABRIC });
+      parts.push({ geo: 'box', pos: [0, 0.24, -hd + 0.5], size: [2.2, 0.48, 0.8], color: FABRIC }); // seat top 0.48 m, like benches and chairs
       parts.push({ geo: 'box', pos: [0, 0.65, -hd + 0.18], size: [2.2, 0.6, 0.2], color: FABRIC });
       seats.push({ x: -0.55, z: -hd + 0.55, r: 0 }, { x: 0.55, z: -hd + 0.55, r: 0 });
       parts.push({ geo: 'box', pos: [0, 0.2, -hd + 1.6], size: [1, 0.4, 0.55], color: WOOD }); // coffee table
