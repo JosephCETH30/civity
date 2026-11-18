@@ -63,42 +63,136 @@ export function partsFor(o: Pick<CityObject, 'type' | 'props'> & { id?: string }
   const c = o.props.color ?? (o.props.style === 'modern' && o.type === 'office' ? '#b9c7d0' : info.color);
   const floors = o.props.floors ?? info.floors ?? 1;
   const h = floors * FLOOR_H;
-  const classic = o.props.style === 'classic';
+  const style = o.props.style ?? 'classic';
+  // Trim, base and roof tones come from the body colour so a street looks coherent, not random.
+  const trim = shade(c, 0.84), dark = shade(c, 0.62);
+  const Z: [number, number, number] = [0, 0, 0]; // parts a style does not use shrink to nothing (count stays fixed)
+  const door: Part = { geo: 'box', pos: [0, 1.15, d / 2 + 0.04], size: [1.5, 2.3, 0.1], color: DOOR };
+  const doorLamp: Part = { geo: 'box', pos: [0, 2.55, d / 2 + 0.1], size: [0.34, 0.12, 0.14], color: '#fff3c4', mat: 'lamp' };
+  // Flat roof cap for modern / industrial, cornice for classic.
+  const cap = (cw: number, cd: number, top: number): Part =>
+    style === 'classic'
+      ? { geo: 'box', pos: [0, top + 0.11, 0], size: [cw + 0.5, 0.22, cd + 0.5], color: trim }
+      : { geo: 'box', pos: [0, top + 0.18, 0], size: [cw + 0.2, 0.36, cd + 0.2], color: style === 'industrial' ? '#55595e' : trim };
   switch (o.type) {
-    case 'residential':
+    case 'residential': {
+      // Facade body, slim balconies on the upper floors (up to 3, spread over the height), entrance canopy,
+      // and a roof per style: modern = flat + parapet + stair box; classic = cornice + low pyramid + chimney;
+      // industrial = flat + water tank + rooftop box.
+      const upper = floors - 1;
+      const balcony = (k: number): Part[] => {
+        if (k >= Math.min(3, upper)) return [{ geo: 'box', pos: [0, 1, 0], size: Z, color: trim }, { geo: 'box', pos: [0, 1, 0], size: Z, color: trim }];
+        const f = upper <= 3 ? k + 1 : Math.round(((k + 1) * floors) / 4);
+        const y = f * FLOOR_H;
+        return [
+          { geo: 'box', pos: [0, y + 0.05, d / 2 + 0.27], size: [w * 0.62, 0.1, 0.54], color: trim },
+          { geo: 'box', pos: [0, y + 0.55, d / 2 + 0.52], size: [w * 0.62, 0.9, 0.04], color: dark },
+        ];
+      };
+      const roof: Part[] =
+        style === 'modern'
+          ? [
+              { geo: 'box', pos: [0, h + 0.37, 0], size: [w - 0.5, 0.02, d - 0.5], color: '#5a5f66' }, // dark roof inside a lighter parapet rim
+              { geo: 'box', pos: [w / 4, h + 0.75, -d / 4], size: [1.4, 1.1, 1.4], color: trim, castShadow: true },
+            ]
+          : style === 'industrial'
+            ? [
+                { geo: 'cyl', pos: [-w / 4, h + 1.4, -d / 5], size: [1.5, 1.8, 1.5], color: '#7a6f63', castShadow: true },
+                { geo: 'box', pos: [w / 4, h + 0.75, d / 5], size: [1.6, 1.0, 1.3], color: '#6b6f74' },
+              ]
+            : [
+                { geo: 'pyramid', pos: [0, h + 0.22 + 0.8, 0], size: [w + 0.6, 1.6, d + 0.6], color: ROOF, castShadow: true },
+                { geo: 'box', pos: [w / 4, h + 1.5, -d / 4], size: [0.5, 1.4, 0.5], color: dark },
+              ];
       return [
         { geo: 'box', pos: [0, h / 2, 0], size: [w, h, d], color: c, mat: 'facade', castShadow: true },
-        { geo: 'pyramid', pos: [0, h + 1.1, 0], size: [w + 0.8, 2.2, d + 0.8], color: o.props.style === 'modern' ? '#4b5058' : ROOF, castShadow: true },
-        { geo: 'box', pos: [0, 1.15, d / 2 + 0.04], size: [1.5, 2.3, 0.1], color: DOOR },
+        cap(w, d, h),
+        ...roof,
+        ...balcony(0), ...balcony(1), ...balcony(2),
+        { geo: 'box', pos: [0, 2.75, d / 2 + 0.55], size: [2.3, 0.12, 1.1], color: trim },
+        door,
+        doorLamp,
       ];
-    case 'office':
+    }
+    case 'office': {
+      // Ground-floor lobby set back, a body, and a setback crown on the top floor (from 4 floors up), rooftop plant.
+      // modern = glassy, slim crown; classic = stone, heavy band over the lobby, stepped top;
+      // industrial = dark steel with exposed corner columns.
+      const crown = floors >= 4;
+      const inset = style === 'modern' ? 0.9 : 1.6;
+      const midH = Math.max(0, h - FLOOR_H - (crown ? FLOOR_H : 0));
+      const top = h;
+      const cw = crown ? w - inset : w, cd = crown ? d - inset : d;
+      const col = (sx: number, sz: number): Part =>
+        style === 'industrial'
+          ? { geo: 'box', pos: [sx * (w / 2 - 0.05), (h - (crown ? FLOOR_H : 0)) / 2, sz * (d / 2 - 0.05)], size: [0.4, h - (crown ? FLOOR_H : 0), 0.4], color: '#3e4247' }
+          : { geo: 'box', pos: [0, 1, 0], size: Z, color: trim };
+      return [
+        { geo: 'box', pos: [0, FLOOR_H / 2, 0], size: floors > 1 ? [w - 1.2, FLOOR_H, d - 1.2] : [w, FLOOR_H, d], color: c, mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [0, FLOOR_H + midH / 2, 0], size: midH ? [w, midH, d] : Z, color: c, mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [0, h - FLOOR_H / 2, 0], size: crown ? [cw, FLOOR_H, cd] : Z, color: c, mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [0, FLOOR_H + 0.1, 0], size: floors > 1 ? (style === 'classic' ? [w + 0.4, 0.6, d + 0.4] : [w + 0.1, 0.2, d + 0.1]) : Z, color: style === 'classic' ? trim : dark },
+        cap(cw, cd, top),
+        { geo: 'box', pos: [cw / 5, top + 0.36 + 0.6, -cd / 5], size: [cw * 0.35, 1.2, cd * 0.3], color: '#a9a49c' },
+        { geo: 'box', pos: [-cw / 4, top + 0.36 + 0.4, cd / 5], size: [cw * 0.2, 0.8, cd * 0.2], color: '#b8b3aa' },
+        col(-1, 1), col(1, 1), col(-1, -1), col(1, -1),
+        { ...door, pos: [0, 1.15, (floors > 1 ? d / 2 - 0.6 : d / 2) + 0.04] },
+        { ...doorLamp, pos: [0, 2.55, (floors > 1 ? d / 2 - 0.6 : d / 2) + 0.1] },
+      ];
+    }
+    case 'commercial': {
+      // Shopfront ground floor: lit glass band, angled awning, blank sign band; simpler upper floors; roof per style.
+      const awning = style === 'modern' ? '#3f4a52' : style === 'industrial' ? '#5d5246' : '#9c4a2b';
+      return [
+        { geo: 'box', pos: [0, FLOOR_H / 2, 0], size: [w, FLOOR_H, d], color: c, mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [0, FLOOR_H + (h - FLOOR_H) / 2, 0], size: floors > 1 ? [w, h - FLOOR_H, d] : Z, color: c, mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [0, 1.45, d / 2 + 0.05], size: [w * 0.82, 1.9, 0.08], color: '#cfe0e8', mat: 'lamp' },
+        { geo: 'box', pos: [0, 2.85, d / 2 + 0.7], size: [w * 0.88, 0.1, 1.45], rot: [0.28, 0, 0], color: awning },
+        { geo: 'box', pos: [0, 3.45, d / 2 + 0.07], size: [w * 0.7, 0.6, 0.12], color: '#efe9de' },
+        cap(w, d, h),
+        style === 'classic'
+          ? { geo: 'pyramid', pos: [0, h + 0.22 + 0.7, 0], size: [w + 0.8, 1.4, d + 0.8], color: '#8f3f22', castShadow: true }
+          : { geo: 'box', pos: [-w / 4, h + 0.36 + 0.5, -d / 5], size: [2.2, 1.0, 1.6], color: '#9d988f' },
+        { ...door, pos: [0, 1.15, d / 2 + 0.07] }, // centre: where the game puts the entrance
+        { ...doorLamp, pos: [0, 2.55, d / 2 + 0.12] },
+      ];
+    }
+    case 'school': {
+      // Wide low wings and a central entrance block one floor taller, with a clock face, a canopy and a door lamp.
+      const roofColor = style === 'modern' ? '#5a5f66' : style === 'industrial' ? '#6b6f74' : ROOF;
+      const wingRoof: Part = style === 'classic'
+        ? { geo: 'pyramid', pos: [0, h + 0.22 + 1.0, 0], size: [w + 0.8, 2.0, d + 0.8], color: roofColor, castShadow: true }
+        : cap(w, d, h);
+      const ch = h + FLOOR_H;
       return [
         { geo: 'box', pos: [0, h / 2, 0], size: [w, h, d], color: c, mat: 'facade', castShadow: true },
-        { geo: 'box', pos: [0, h + 0.15, 0], size: [w + 0.3, 0.3, d + 0.3], color: '#d9d4cc' },
-        { geo: 'box', pos: [1, h + 1, -1], size: [w * 0.35, 1.4, d * 0.35], color: '#bfbab2' },
-        { geo: 'box', pos: [0, 1.15, d / 2 + 0.04], size: [1.5, 2.3, 0.1], color: DOOR },
+        { geo: 'box', pos: [0, ch / 2, 0.2], size: [w * 0.3, ch, d - 0.4], color: shade(c, 1.06), mat: 'facade', castShadow: true },
+        wingRoof,
+        { geo: 'pyramid', pos: [0, ch + 0.9, 0.2], size: [w * 0.3 + 0.6, 1.8, d * 0.5], color: roofColor, castShadow: true },
+        { geo: 'cyl', pos: [0, ch - 1.4, d / 2 + 0.06], size: [1.3, 0.1, 1.3], rot: [Math.PI / 2, 0, 0], color: '#f3efe6' },
+        { geo: 'box', pos: [0, 3.0, d / 2 + 0.85], size: [3.4, 0.15, 1.7], color: trim },
+        door,
+        doorLamp,
       ];
-    case 'commercial':
+    }
+    case 'hospital': {
+      // L-shaped from above (front block + rear wing one floor lower), entrance canopy, rooftop helipad with a
+      // contrasting ring, and a neutral green plus on white (never a red cross).
+      const fd = d * 0.5, wingH = h - FLOOR_H;
       return [
-        { geo: 'box', pos: [0, h / 2, 0], size: [w, h, d], color: c, mat: 'facade', castShadow: true },
-        { geo: 'pyramid', pos: [0, h + 0.9, 0], size: [w + 1, 1.8, d + 1], color: classic ? '#8f3f22' : ROOF, castShadow: true },
-        { geo: 'box', pos: [0, 2.7, d / 2 + 0.7], size: [w * 0.85, 0.12, 1.4], color: '#e9e2d4' },
-        { geo: 'box', pos: [0, 1.15, d / 2 + 0.04], size: [1.5, 2.3, 0.1], color: DOOR },
+        { geo: 'box', pos: [0, h / 2, d / 4], size: [w, h, fd], color: c, mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [-w * 0.275, wingH / 2, -d / 4], size: wingH > 0 ? [w * 0.45, wingH, fd] : Z, color: shade(c, 0.97), mat: 'facade', castShadow: true },
+        { geo: 'box', pos: [0, h + 0.15, d / 4], size: [w + 0.2, 0.3, fd + 0.2], color: trim },
+        { geo: 'cyl', pos: [0, h + 0.35, d / 4], size: [4.4, 0.1, 4.4], color: '#e9e5dc' },
+        { geo: 'cyl', pos: [0, h + 0.41, d / 4], size: [3.6, 0.12, 3.6], color: '#3f454d' },
+        { geo: 'box', pos: [0, h - 1.4, d / 2 + 0.06], size: [1.7, 1.7, 0.1], color: '#f3f1ec' },
+        { geo: 'box', pos: [0, h - 1.4, d / 2 + 0.13], size: [1.15, 0.34, 0.06], color: '#2e8b57' },
+        { geo: 'box', pos: [0, h - 1.4, d / 2 + 0.13], size: [0.34, 1.15, 0.06], color: '#2e8b57' },
+        { geo: 'box', pos: [0, 3.0, d / 2 + 1.2], size: [4.2, 0.15, 2.4], color: trim },
+        door,
+        doorLamp,
       ];
-    case 'school':
-      return [
-        { geo: 'box', pos: [0, h / 2, 0], size: [w, h, d], color: c, mat: 'facade', castShadow: true },
-        { geo: 'pyramid', pos: [0, h + 1.2, 0], size: [w + 1, 2.4, d + 1], color: ROOF, castShadow: true },
-        { geo: 'box', pos: [0, 1.15, d / 2 + 0.04], size: [1.5, 2.3, 0.1], color: DOOR },
-      ];
-    case 'hospital':
-      return [
-        { geo: 'box', pos: [0, h / 2, 0], size: [w, h, d], color: c, mat: 'facade', castShadow: true },
-        { geo: 'box', pos: [0, h + 0.15, 0], size: [w + 0.3, 0.3, d + 0.3], color: '#d9d4cc' },
-        { geo: 'box', pos: [0, h + 0.35, 0], size: [w * 0.45, 0.12, 1.5], color: '#c0392b' },
-        { geo: 'box', pos: [0, h + 0.35, 0], size: [1.5, 0.12, d * 0.45], color: '#c0392b' },
-        { geo: 'box', pos: [0, 1.15, d / 2 + 0.04], size: [1.5, 2.3, 0.1], color: DOOR },
-      ];
+    }
     case 'park': {
       // Grass with a crossing path, a low edge kerb, four shrubs, and the fountain (the AI studio landmark).
       const KERB = '#cfc6b4', SHRUB = shade(c, 0.78);
