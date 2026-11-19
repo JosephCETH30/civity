@@ -87,7 +87,7 @@ export const profileUpdateSchema = z.object({
 // ---------- City objects ----------
 export const OBJECT_TYPES = [
   'residential', 'office', 'commercial', 'school', 'hospital', 'park',
-  'road', 'tree', 'streetlight', 'bench', 'bus_stop', 'artwork',
+  'road', 'tree', 'streetlight', 'bench', 'bus_stop', 'artwork', 'camera',
 ] as const;
 export type ObjectType = (typeof OBJECT_TYPES)[number];
 /** Types users place from the asset library. Photo sculptures (artwork) are only made through the photo-to-3D studio. */
@@ -108,6 +108,8 @@ export const OBJECT_INFO: Record<ObjectType, { label: string; footprint: [number
   bench: { label: 'Bench', footprint: [2, 1], color: '#8a6446' },
   bus_stop: { label: 'Bus stop', footprint: [3, 2], color: '#2b6f8f' },
   artwork: { label: 'Photo sculpture', footprint: [3, 1.6], color: '#d6cdbd' },
+  // A scene camera (like Blender's): you can look through it. Not solid; floats at its own height.
+  camera: { label: 'Camera', footprint: [1, 1], color: '#2f3236' },
 };
 
 const finite = z.number().finite();
@@ -125,6 +127,8 @@ export const objectPropsSchema = z
     depthScale: z.number().min(0.1).max(3).optional(),
     cutout: z.number().min(0).max(0.8).optional(),
     aspect: z.number().min(0.2).max(5).optional(),
+    // scene cameras: vertical field of view in degrees
+    fov: z.number().min(15).max(110).optional(),
   })
   .strict();
 
@@ -172,6 +176,10 @@ export function normalizeSpec(spec: ObjectSpec, worldSize: number): ObjectSpec {
 
 export function defaultSpec(type: ObjectType, position: Vec3): ObjectSpec {
   const info = OBJECT_INFO[type];
+  if (type === 'camera') {
+    // Eye height above the ground, tilted 10° down, a standard 40° vertical field of view.
+    return { type, position: { ...position, y: Math.max(position.y, 2.5) }, rotationY: 0, rotationX: (10 * Math.PI) / 180, rotationZ: 0, scale: { x: 1, y: 1, z: 1 }, props: { fov: 40 } };
+  }
   return {
     type,
     position,
@@ -321,13 +329,13 @@ export type ServerMessage =
 
 // ---------- AI commands (LLM output is validated against this; never executed as code) ----------
 export const aiObjectSchema = z.object({
-  type: z.enum(OBJECT_TYPES).exclude(['artwork']),
+  type: z.enum(OBJECT_TYPES).exclude(['artwork', 'camera']),
   floors: z.number().int().min(1).max(40).optional(),
   style: z.enum(STYLES).optional(),
   color: hexColor.optional(),
   name: z.string().max(60).optional(),
   position: z.object({ x: finite, z: finite }).optional(),
-  near: z.enum(OBJECT_TYPES).exclude(['artwork']).optional(),
+  near: z.enum(OBJECT_TYPES).exclude(['artwork', 'camera']).optional(),
   rotationY: finite.optional(),
   scale: z.number().min(0.25).max(4).optional(),
 });

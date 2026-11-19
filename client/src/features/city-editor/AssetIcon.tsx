@@ -14,6 +14,7 @@ const PATHS: Record<ObjectType, React.ReactNode> = {
   bench: <><path d="M4 11h16M4 14h16M6 14v5M18 14v5M5 11V8h14v3" /></>,
   artwork: <><rect x="5" y="3" width="14" height="12" rx="0.5" /><path d="m7 13 3.5-4 2.5 3 1.5-1.5L17 13" /><circle cx="14.5" cy="6.5" r="1" /><path d="M8 21h8M12 15v6" /></>,
   bus_stop: <><path d="M6 21V4" /><rect x="3.5" y="4" width="5" height="5" rx="1" /><rect x="11" y="9" width="10" height="9" rx="1.5" /><path d="M11 13h10M13.5 18v2M18.5 18v2" /></>,
+  camera: <><rect x="3" y="9" width="12" height="9" rx="1" /><path d="m15 12 6-3v9l-6-3" /><circle cx="6.5" cy="6" r="2.5" /><circle cx="12" cy="6" r="2.5" /></>,
 };
 
 export function AssetIcon({ type, className = 'h-6 w-6' }: { type: ObjectType; className?: string }) {

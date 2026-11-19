@@ -5,6 +5,7 @@ import { OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitImpl } from 'three-stdlib';
 import { INTERIOR_DEPTH } from '@civitas/shared';
 import { battleFx, localPlayer, view } from '../core/transient';
+import { objectMatrix } from '../objects/parts';
 import { playerNow, stepLocalPlayer } from '../core/interactions';
 import { useWorld, type CameraMode } from '../../stores/world';
 
@@ -16,6 +17,8 @@ const PRESETS: Record<CameraMode, { dist: number; polar: number; minPolar: numbe
   overview: { dist: 0, polar: 0.75, minPolar: 0.2, maxPolar: 1.2, follow: false, pan: true },
 };
 // Battle in Follow view: closer and lower, so the screen centre (crosshair) points where you shoot.
+const _m = new THREE.Matrix4(), _s = new THREE.Vector3();
+const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 const BATTLE_THIRD = { ...PRESETS.third, dist: 6.5, polar: 1.42, minPolar: 0.95, maxPolar: 1.62 };
 
 /** One OrbitControls instance (mouse, touch drag, pinch, wheel) configured per camera mode. Also drives the local player. */
@@ -26,6 +29,7 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
   const transition = useRef(0);
   const desired = useRef(new THREE.Vector3());
   const inBattle = useWorld((s) => s.inBattle);
+  const viewCamera = useWorld((s) => s.viewCamera);
 
   useEffect(() => {
     camera.far = far;
@@ -36,7 +40,10 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
   useEffect(() => {
     const c = controls.current;
     if (!c) return;
-    c.enabled = mode !== 'first';
+    c.enabled = mode !== 'first' && !viewCamera;
+    if (viewCamera) return;
+    (camera as THREE.PerspectiveCamera).fov = 55; // back from a scene camera's lens
+    camera.updateProjectionMatrix();
     if (mode === 'first') {
       // Look the way the camera was looking.
       view.yaw = c.getAzimuthalAngle();
@@ -57,7 +64,7 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
     c.minDistance = mode === 'third' ? (inBattle ? 3.5 : 5) : 8;
     c.maxDistance = Math.max(60, worldSize * 1.4);
     last.current.set(localPlayer.x, localPlayer.inside ? INTERIOR_DEPTH : 0, localPlayer.z);
-  }, [mode, worldSize, inBattle]);
+  }, [mode, worldSize, inBattle, viewCamera]);
 
   // Chase camera (GTA-style): while you walk in Follow mode the camera swings round behind the character.
   // Dragging the camera takes over; the chase resumes shortly after you let go.
@@ -76,6 +83,17 @@ export function CameraRig({ mode, worldSize, far }: { mode: CameraMode; worldSiz
     const c = controls.current;
     if (!c) return;
     const dt = Math.min(rawDt, 0.1);
+    if (viewCamera) {
+      // Looking through a scene camera: its position and rotation (lens looks along its +z), its field of view.
+      stepLocalPlayer(dt, c.getAzimuthalAngle(), worldSize);
+      const o = useWorld.getState().objects[viewCamera];
+      if (!o) { useWorld.getState().set({ viewCamera: null }); return; }
+      objectMatrix({ ...o, scale: { x: 1, y: 1, z: 1 } }, _m).decompose(camera.position, camera.quaternion, _s);
+      camera.quaternion.multiply(_flip); // three.js cameras look along -z
+      const persp = camera as THREE.PerspectiveCamera, fov = o.props.fov ?? 40;
+      if (persp.fov !== fov) { persp.fov = fov; persp.updateProjectionMatrix(); }
+      return;
+    }
     if (mode === 'first') {
       stepLocalPlayer(dt, view.yaw, worldSize);
       if (localPlayer.car) view.yaw = localPlayer.r + Math.PI; // driving: look where the car points

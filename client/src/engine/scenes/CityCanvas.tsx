@@ -20,6 +20,7 @@ import { Environment } from '../lighting/Environment';
 import { Transit } from '../simulation/Transit';
 import { PROFILES, type QualityLevel } from '../optimization/quality';
 import { BattleScene } from '../combat/BattleScene';
+import { SceneCameras } from '../objects/SceneCameras';
 
 const DOWNGRADE: Record<QualityLevel, QualityLevel | null> = { high: 'balanced', balanced: 'low', low: null };
 
@@ -81,6 +82,7 @@ function Scene() {
   const speaking = useMedia((s) => s.speaking);
   const insideId = useWorld((s) => s.inside);
   const battle = useWorld((s) => s.battle);
+  const viewCamera = useWorld((s) => s.viewCamera);
   const insideObj = insideId ? objectsMap[insideId] : undefined;
   const me = self ? players[self.sessionId] : undefined;
 
@@ -133,12 +135,13 @@ function Scene() {
       <CityObjects objects={unselected} standardMaterial={profile.standardMaterial} shadows={profile.shadows} viewDistance={profile.viewDistance} chunk={profile.chunk} onPick={onPick} />
       {insideObj && <Interior building={insideObj} />}
       <ArtworkReliefs objects={allObjects} lowDetail={quality === 'low'} />
-      {selected && <SelectedObject object={selected} standard={profile.standardMaterial} />}
+      {selected && selected.id !== viewCamera && <SelectedObject object={selected} standard={profile.standardMaterial} />}
       {tool.kind === 'place' && <Ghost type={tool.type} worldSize={room.worldSize} />}
 
       <Transit routes={routes} objects={objectsMap} sim={sim} highlightStops={tool.kind === 'route' ? tool.stops : []} carsPer100m={quality === 'low' ? 1.5 : 3} />
 
       <BattleScene />
+      <SceneCameras objects={allObjects} />
       {me && cameraMode !== 'first' && <Avatar sessionId="local" name={me.name} color={me.color} seed={me.userId} speaking={speaking.has(me.userId)} showLabel={false} lite={quality === 'low'} armed={!!battle[me.id]} />}
       {Object.values(players)
         .filter((p) => p.id !== self?.sessionId)

@@ -12,7 +12,7 @@ type XZ = { x: number; z: number };
 
 // Order matters: longer / more specific phrases first. Includes basic Indonesian keywords.
 // Photo sculptures are made in the photo-to-3D studio, never from text.
-type TextType = Exclude<ObjectType, 'artwork'>;
+type TextType = Exclude<ObjectType, 'artwork' | 'camera'>;
 const TYPE_WORDS: [RegExp, TextType][] = [
   [/rumah sakit|hospital|clinic|klinik/, 'hospital'],
   [/bus ?stop|halte|stop\b|station/, 'bus_stop'],

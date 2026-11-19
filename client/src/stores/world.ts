@@ -42,6 +42,8 @@ interface WorldState {
   killFeed: { id: number; text: string }[];
   /** How many of my city edits can be undone. */
   undoCount: number;
+  /** Scene camera (object id) the view looks through, like Blender's camera view; null = normal camera. */
+  viewCamera: string | null;
   tool: Tool;
   transformMode: 'translate' | 'rotate' | 'scale';
   cameraMode: CameraMode;
@@ -78,6 +80,7 @@ const initial = () => ({
   battle: {} as Record<string, BattleStats>,
   killFeed: [] as { id: number; text: string }[],
   undoCount: 0,
+  viewCamera: null as string | null,
   tool: { kind: 'select' } as Tool,
 });
 

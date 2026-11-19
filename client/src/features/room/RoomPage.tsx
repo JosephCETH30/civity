@@ -22,6 +22,7 @@ import { InteractionPrompt, TouchActions } from './InteractionControls';
 import { PhotoStudio } from '../art/PhotoStudio';
 import { Minimap } from './Minimap';
 import { BattleHud, BattleToggle } from '../battle/BattleHud';
+import { CameraViewBanner } from './CameraViewBanner';
 import { AssetRail } from '../city-editor/EditorPanels';
 import { LudoPanel } from '../games/LudoPanel';
 
@@ -175,6 +176,7 @@ function RoomShell() {
         {!panel && <div className="pointer-events-none absolute bottom-[calc(76px+env(safe-area-inset-bottom))] left-4"><Joystick /></div>}
         {!panel && renderMode === '3d' && <TouchActions />}
         {renderMode === '3d' && <BattleHud mobile />}
+        <CameraViewBanner />
         <PhotoStudio />
         <LudoPanel />
         <Toast bottom />
@@ -262,6 +264,7 @@ function RoomShell() {
           {isTouchDevice() && <div className="pointer-events-none absolute bottom-24 left-4 z-10"><Joystick /></div>}
           {renderMode === '3d' && <InteractionPrompt />}
           {renderMode === '3d' && <BattleHud />}
+          <CameraViewBanner />
           <PhotoStudio />
           <LudoPanel />
           <Toast />

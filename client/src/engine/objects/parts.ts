@@ -286,6 +286,16 @@ export function partsFor(o: Pick<CityObject, 'type' | 'props'> & { id?: string }
         { geo: 'box', pos: [0, 0.3, 0], size: [w, 0.6, d], color: c, castShadow: true },
         { geo: 'box', pos: [0, 0.62, d / 2 - 0.15], size: [0.9, 0.04, 0.25], color: '#4a4741' },
       ];
+    case 'camera':
+      // Film-style camera (like Blender's): body, lens pointing forward (+z), two reels, a small red tally lamp.
+      // Centred on its position (it floats); the frustum lines are drawn by SceneCameras.
+      return [
+        { geo: 'box', pos: [0, 0, 0], size: [0.34, 0.36, 0.6], color: c, castShadow: true },
+        { geo: 'cyl', pos: [0, 0, 0.42], size: [0.24, 0.26, 0.24], rot: [Math.PI / 2, 0, 0], color: '#1a1c1f' },
+        { geo: 'cyl', pos: [0, 0.3, -0.12], size: [0.3, 0.08, 0.3], rot: [0, 0, Math.PI / 2], color: '#45494f' },
+        { geo: 'cyl', pos: [0, 0.3, 0.18], size: [0.3, 0.08, 0.3], rot: [0, 0, Math.PI / 2], color: '#45494f' },
+        { geo: 'box', pos: [0.1, 0.12, 0.31], size: [0.05, 0.05, 0.02], color: '#e0322b', mat: 'lamp' },
+      ];
     case 'bus_stop':
       // Shelter: roof, glass back, a blank lit ad panel, a bench inside, two front posts, and a sign pole on the kerb side (+z).
       return [

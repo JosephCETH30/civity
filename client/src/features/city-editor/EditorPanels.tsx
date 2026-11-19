@@ -150,6 +150,7 @@ export function PropertiesPanel() {
           </p>
         </div>
       </div>
+      {!canEdit && obj.type === 'camera' && <Button size="sm" className="w-full" onClick={() => set({ viewCamera: obj.id })}>View through camera</Button>}
       {canEdit && (
         <>
           <div className="space-y-2.5">
@@ -181,6 +182,15 @@ export function PropertiesPanel() {
                   <input type="range" min={0} max={0.6} step={0.05} value={obj.props.cutout ?? 0} className="w-full accent-[var(--primary)]"
                     onChange={(e) => update({ props: { cutout: +e.target.value } })} aria-label="Remove background" />
                 </Row>
+              </>
+            )}
+            {obj.type === 'camera' && (
+              <>
+                <Row label={`Field of view ${obj.props.fov ?? 40}°`}>
+                  <input type="range" min={15} max={110} step={1} value={obj.props.fov ?? 40} className="w-full accent-[var(--primary)]"
+                    onChange={(e) => update({ props: { fov: +e.target.value } })} aria-label="Field of view" />
+                </Row>
+                <Button size="sm" className="w-full" onClick={() => set({ viewCamera: obj.id })}>View through camera</Button>
               </>
             )}
             <Row label="Color">
